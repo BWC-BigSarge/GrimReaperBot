@@ -1,0 +1,23 @@
+version: "3.8"
+services:
+  grimreaper:
+    build:
+      context: .
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-local}
+    image: bwc/grimreaper:${COMMIT_SHA:-latest}
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - WEBHOOK_SHARED_SECRET=${WEBHOOK_SHARED_SECRET}
+      - SQLITE_DB=/data/grim_reaper.db
+      - CHANNEL_PUBLIC=${CHANNEL_PUBLIC:-sc-public}
+      - CHANNEL_ANNOUNCE=${CHANNEL_ANNOUNCE:-sc-announcements}
+      - WEB_PORT=${WEB_PORT:-8080}
+    restart: unless-stopped
+    volumes:
+      - grimreaper_data:/data
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+
+volumes:
+  grimreaper_data:
