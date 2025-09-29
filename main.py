@@ -1,20 +1,43 @@
-# grim_reaper_bot.py
-
+# main.py - Discord bot for tracking kills/deaths in Star Citizen for BWC members
 import os
-import sqlite3
+from dotenv import load_dotenv
+import discord
+from discord.ext import commands
+import mysql.connector
 import logging
 import asyncio
 from datetime import datetime
 from collections import defaultdict
 
-import discord
-from discord.ext import commands
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+#from apscheduler.schedulers.asyncio import AsyncIOScheduler
+#from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 from flask import Flask, request, jsonify
 import threading
 import secrets
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+description = """
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+                       BWC-KillTracker for Star Citizen
+     (Tracks kills/deaths and other metrics that occur for members of BWC)
+     
+     Vibe coded by: BWC-Firely
+         (https://robertsspaceindustries.com/en/citizens/BWC-Firefly)
+     Re-Coded by: Game_Overture
+         (https://robertsspaceindustries.com/citizens/Game_Overture)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+"""
+API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
+ADMIN_ROLE_NAME = os.getenv("ADMIN_ROLE_NAME", 480372823454384138) # Default is "NBR NCO" id number - this role allows manual_weekly_tally
+
+# NOTE: These channel IDs currently point to my test server (Game_Overture)
+CHANNEL_SC_PUBLIC = 1420804944075689994
+CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678
+#CHANNEL_SC_PUBLIC = 480367983558918174
+#CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -26,42 +49,6 @@ logging.basicConfig(
 logger = logging.getLogger("GrimReaperBot")
 
 # ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "your_discord_token_here")
-
-# Replace with your actual channel IDs
-CHANNEL_SC_PUBLIC = 123456789012345678
-CHANNEL_SC_ANNOUNCEMENTS = 987654321098765432
-
-# Role allowed to trigger admin commands
-ADMIN_ROLE_NAME = os.getenv("ADMIN_ROLE_NAME", "Admin")
-
-# SQLite database (hosted on SparkedHost or local dev)
-DB_PATH = "grimreaperbot.db"
-
-# Shared secret for API requests from the BWC website
-API_SHARED_SECRET = os.getenv("API_SHARED_SECRET", "super-secret")
-
-# ---------------------------------------------------------------------------
-# Database Setup
-# ---------------------------------------------------------------------------
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS api_keys (
-            discord_id TEXT PRIMARY KEY,
-            api_key TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )"""
-    )
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# ---------------------------------------------------------------------------
 # Discord Bot
 # ---------------------------------------------------------------------------
 intents = discord.Intents.default()
@@ -69,19 +56,48 @@ intents.messages = True
 intents.guilds = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", description=description, intents=intents)
 
 # Track kills in memory
 kill_history = defaultdict(list)  # {player: [timestamps]}
 player_kills = defaultdict(int)   # {player: total kills}
 
 # ---------------------------------------------------------------------------
+# Bot Events
+# ---------------------------------------------------------------------------
+@bot.event
+async def on_ready():
+    # Database Setup
+    global conn
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT")),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_DATABASE")
+    )
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS api_keys (
+        discord_id VARCHAR(42) PRIMARY KEY,
+        api_key VARCHAR(42) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # Logger Setup
+    logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
+
+    #if not scheduler.running:
+    #    scheduler.start()
+
+# ---------------------------------------------------------------------------
 # APScheduler Setup
 # ---------------------------------------------------------------------------
-jobstores = {
-    "default": SQLAlchemyJobStore(url=f"sqlite:///{DB_PATH}")
-}
-scheduler = AsyncIOScheduler(jobstores=jobstores)
+# jobstores = {
+#     "default": SQLAlchemyJobStore(url=f"sqlite:///{DB_PATH}")
+# }
+# scheduler = AsyncIOScheduler(jobstores=jobstores)
 
 
 async def weekly_tally():
@@ -104,24 +120,15 @@ async def weekly_tally():
         logger.warning("Announcements channel not found!")
 
 
-# Add job if it doesn’t exist
-if not scheduler.get_job("weekly_tally"):
-    scheduler.add_job(
-        weekly_tally,
-        "interval",
-        hours=168,  # 7 days
-        id="weekly_tally",
-        replace_existing=True,
-    )
-
-# ---------------------------------------------------------------------------
-# Bot Events
-# ---------------------------------------------------------------------------
-@bot.event
-async def on_ready():
-    logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    if not scheduler.running:
-        scheduler.start()
+# # Add job if it doesn’t exist
+# if not scheduler.get_job("weekly_tally"):
+#     scheduler.add_job(
+#         weekly_tally,
+#         "interval",
+#         hours=168,  # 7 days
+#         id="weekly_tally",
+#         replace_existing=True,
+#     )
 
 # ---------------------------------------------------------------------------
 # Commands
@@ -169,6 +176,7 @@ app = Flask("GrimReaperBotAPI")
 
 @app.route("/get_api_key", methods=["POST"])
 def get_api_key():
+    # Authenticate request
     data = request.json
     if not data or data.get("secret") != API_SHARED_SECRET:
         return jsonify({"error": "Unauthorized"}), 403
@@ -177,24 +185,36 @@ def get_api_key():
     if not discord_id:
         return jsonify({"error": "Missing discord_id"}), 400
 
-    api_key = secrets.token_hex(16)
-
-    conn = sqlite3.connect(DB_PATH)
+    # Check if user already has an API key
     cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO api_keys (discord_id, api_key) VALUES (?, ?)",
-        (discord_id, api_key),
-    )
-    conn.commit()
-    conn.close()
+    cur.execute("SELECT api_key FROM api_keys WHERE discord_id = %s", (discord_id,))
+    ret = cur.fetchone()
+    api_key = None
+    if ret:
+        api_key = ret[0]
+        print("API key found")
+        logger.info(f"Existing API key for {discord_id} retrieved")
+    else:
+        print("No API key found, generating new one")
+        api_key = secrets.token_hex(10)
+        print(f"Generated API key: { api_key }")
+        cur.execute(
+            """
+            INSERT INTO api_keys (discord_id, api_key)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE api_key = VALUES(api_key),
+                                    created_at = CURRENT_TIMESTAMP
+            """,
+            (discord_id, api_key),
+        )
+        conn.commit()
+        print("Generated new API key")
+        logger.info(f"Generated new API key for {discord_id}")
 
-    logger.info(f"Issued API key for {discord_id}")
     return jsonify({"api_key": api_key})
 
-
 def run_api():
-    app.run(host="0.0.0.0", port=5000)
-
+    app.run(host="0.0.0.0", port=25219)
 
 api_thread = threading.Thread(target=run_api, daemon=True)
 api_thread.start()
@@ -203,4 +223,5 @@ api_thread.start()
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+    load_dotenv()
+    bot.run(os.getenv("DISCORD_TOKEN"))
