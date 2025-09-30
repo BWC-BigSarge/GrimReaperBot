@@ -6,7 +6,7 @@ from discord.ext import commands
 import mysql.connector
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 #from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -79,8 +79,9 @@ async def on_ready():
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS api_keys (
-        discord_id VARCHAR(42) PRIMARY KEY,
+        discord_id VARCHAR(24) PRIMARY KEY,
         api_key VARCHAR(42) NOT NULL,
+        rsi_handle VARCHAR(42),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -196,7 +197,7 @@ def get_api_key():
         logger.info(f"Existing API key for {discord_id} retrieved")
     else:
         print("No API key found, generating new one")
-        api_key = secrets.token_hex(10)
+        api_key = secrets.token_hex(16)
         print(f"Generated API key: { api_key }")
         cur.execute(
             """
@@ -212,6 +213,33 @@ def get_api_key():
         logger.info(f"Generated new API key for {discord_id}")
 
     return jsonify({"api_key": api_key})
+
+# JSON Payload Example:
+# { "api_key": key,
+#   "player_name": self.rsi_handle["current"] }
+@app.route("/validateKey", methods=["POST"])
+def validate_key():
+    data = request.json
+    if not data:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    api_key = data.get("api_key")
+    player_name = data.get("player_name")
+
+    # Determine if API key exists, then update rsi_handle if needed
+    cur = conn.cursor()
+    cur.execute("SELECT discord_id, rsi_handle, created_at FROM api_keys WHERE api_key = %s", (api_key,))
+    ret = cur.fetchone()
+    if not ret:
+        return jsonify({"error": "Invalid API key"}), 403
+    discord_id, rsi_handle, created_at = ret
+    if player_name and rsi_handle != player_name:
+        cur.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
+    conn.commit()
+    expiration_date = created_at + timedelta(days=180)
+    # Convert expiration_date to work with datetime.strptime()
+    expiration_date = expiration_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return jsonify({"success": True, "expires_at": expiration_date}), 200
 
 def run_api():
     app.run(host="0.0.0.0", port=25219)
