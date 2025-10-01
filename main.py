@@ -248,7 +248,7 @@ def validate_key():
 def get_data_map():
     return jsonify(data_map.weaponMapping)
 
-@app.route("data_map/locations", methods=["GET"])
+@app.route("/data_map/locations", methods=["GET"])
 def get_data_map_locations():
     return jsonify(data_map.locationMapping)
 
@@ -256,7 +256,7 @@ def get_data_map_locations():
 def get_data_map_vehicles():
     return jsonify(data_map.vehicleMapping)
 
-@app.route("data_map/ignoredVictimRules", methods=["GET"])
+@app.route("/data_map/ignoredVictimRules", methods=["GET"])
 def get_data_map_ignoredVictimRules():
     return jsonify(data_map.ignoredVictimRules)
 
