@@ -23,6 +23,7 @@
     <Content Include="requirements.txt" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="data_map.py" />
     <Compile Include="main.py" />
   </ItemGroup>
   <ItemGroup>

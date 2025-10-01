@@ -16,6 +16,8 @@ from flask import Flask, request, jsonify
 import threading
 import secrets
 
+import data_map # Human readable mappings for various log entries
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -240,6 +242,23 @@ def validate_key():
     # Convert expiration_date to work with datetime.strptime()
     expiration_date = expiration_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     return jsonify({"success": True, "expires_at": expiration_date}), 200
+
+# GET requests for various data maps
+@app.route("/data_map/weapons", methods=["GET"])
+def get_data_map():
+    return jsonify(data_map.weaponMapping)
+
+@app.route("data_map/locations", methods=["GET"])
+def get_data_map_locations():
+    return jsonify(data_map.locationMapping)
+
+@app.route("/data_map/vehicles", methods=["GET"])
+def get_data_map_vehicles():
+    return jsonify(data_map.vehicleMapping)
+
+@app.route("data_map/ignoredVictimRules", methods=["GET"])
+def get_data_map_ignoredVictimRules():
+    return jsonify(data_map.ignoredVictimRules)
 
 def run_api():
     app.run(host="0.0.0.0", port=25219)
