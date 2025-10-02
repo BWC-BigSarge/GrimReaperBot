@@ -156,7 +156,7 @@ async def kill(ctx, player:str):
     """Simulate recording a PvP kill (testing only)."""
     details = {
         'discord_id': ctx.author.id,
-        'player': ctx.author.name,
+        'player': "BWC",
         'victim': player,
         'time': datetime.utcnow().timestamp(),
         'zone': "Zone Name",
@@ -199,8 +199,12 @@ def process_kill(result:str, details:object, store_in_db:bool):
         client_ver = details.get("client_ver")
         killers_ship = details.get("killers_ship")
 
+        # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
+        kill_time = kill_time.strip("<>")
+        kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+
         # Record kill in memory
-        kill_history[player].append(kill_time)
+        kill_history[player].append(kill_time.timestamp())
         player_kills[player] += 1
 
         # Record kill in database
@@ -372,9 +376,11 @@ def get_data_map_ignoredVictimRules():
 #{
 #    "result": "suicide",
 #    "data": {
+#        "discord_id": discord_id,
 #        "player": curr_user,
 #        "weapon": weapon,
 #        "zone": killed_zone
+#        "anonymize_state": self.anonymize_state
 #    }
 #}
 #
@@ -382,11 +388,13 @@ def get_data_map_ignoredVictimRules():
 #{
 #    "result": "killed",
 #    "data": {
+#        "discord_id": discord_id,
 #        "player": curr_user,
 #        "victim": curr_user,
 #        "killer": killer,
 #        "weapon": mapped_weapon,
 #        "zone": self.active_ship["current"]
+#        "anonymize_state": self.anonymize_state
 #    }
 #}
 #
@@ -409,12 +417,11 @@ def get_data_map_ignoredVictimRules():
 @app.route("/reportKill", methods=["POST"])
 def report_kill():
     data = request.json
-
     result = data.get("result")
     details = data.get("data", {})
 
-    process_kill(result, details)
-
+    process_kill(result, details, store_in_db=True)
+    return jsonify({"success": True}), 200
 
 #@app.route("/reportACKill", methods=["POST"])
 
