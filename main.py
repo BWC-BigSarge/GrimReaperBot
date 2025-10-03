@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import discord
 from discord.ext import commands
 import mysql.connector
+from mysql.connector import pooling
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -66,42 +67,76 @@ kill_history = defaultdict(list)  # {player: [timestamps]}
 player_kills = defaultdict(int)   # {player: total kills}
 
 # ---------------------------------------------------------------------------
+# Database Connection Pool
+# ---------------------------------------------------------------------------
+cnxpool = None # Pool will be initialized within bot's on_ready() event
+
+def get_connection():
+    global cnxpool
+    if cnxpool is None:
+        raise RuntimeError("Database connection pool not initialized yet")
+    return cnxpool.get_connection()
+
+# ---------------------------------------------------------------------------
 # Bot Events
 # ---------------------------------------------------------------------------
 @bot.event
 async def on_ready():
+    global cnxpool
+
     # Database Setup
-    global conn
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT")),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_DATABASE")
-    )
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS api_keys (
-        discord_id VARCHAR(24) PRIMARY KEY,
-        api_key VARCHAR(42) NOT NULL,
-        rsi_handle VARCHAR(42),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS kill_feed (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        discord_id VARCHAR(24) NOT NULL,
-        rsi_handle VARCHAR(42) NOT NULL,
-        victim VARCHAR(42) NOT NULL,
-        time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        zone VARCHAR(64),
-        weapon VARCHAR(64),
-        game_mode VARCHAR(42),
-        client_ver VARCHAR(10),
-        killers_ship VARCHAR(64)
-    )
-    """)
+    try:
+        dbconfig = {
+            "host": os.getenv("DB_HOST"),
+            "port": int(os.getenv("DB_PORT")),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_DATABASE")
+        }
+        cnxpool = pooling.MySQLConnectionPool(pool_name="mypool",
+                                              pool_size=5,
+                                              **dbconfig)
+        logger.info("Database connection pool established")
+        
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    discord_id VARCHAR(24) PRIMARY KEY,
+                    api_key VARCHAR(42) NOT NULL,
+                    rsi_handle VARCHAR(42),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS kill_feed (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    discord_id VARCHAR(24) NOT NULL,
+                    rsi_handle VARCHAR(42) NOT NULL,
+                    victim VARCHAR(42) NOT NULL,
+                    time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    zone VARCHAR(64),
+                    weapon VARCHAR(64),
+                    game_mode VARCHAR(42),
+                    client_ver VARCHAR(10),
+                    killers_ship VARCHAR(64)
+                )
+                """)
+            except mysql.connector.Error as err:
+                logger.error(f"Fatal Error creating tables: {err}")
+                return
+            finally:
+                cursor.close()
+        except mysql.connector.Error as err:
+            logger.error(f"Fatal Error: initializing database: {err}")
+            return
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Fatal Error: initializing database: {e}")
+        return
 
     # Logger Setup
     logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -190,6 +225,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
         player = details.get("player")
         logger.info("Anonymized kill reported")
     
+    success = True
     if result == "killer":
         victim = details.get("victim")
         kill_time = details.get("time")
@@ -210,45 +246,62 @@ def process_kill(result:str, details:object, store_in_db:bool):
         # Record kill in database
         if store_in_db:
             logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone}")
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO kill_feed (discord_id, rsi_handle, victim, time, zone, weapon, game_mode, client_ver, killers_ship)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (discord_id, player, victim, kill_time, zone, weapon, game_mode, client_ver, killers_ship)
-            )
-            conn.commit()
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                        """
+                        INSERT INTO kill_feed (discord_id, rsi_handle, victim, time, zone, weapon, game_mode, client_ver, killers_ship)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (discord_id, player, victim, kill_time, zone, weapon, game_mode, client_ver, killers_ship)
+                    )
+                conn.commit()
+            except mysql.connector.Error as err:
+                logger.error(f"Error recording kill in database: {err}")
+                success = False
+            except Exception as e:
+                logger.error(f"Unexpected error recording kill in database: {e}")
+                success = False
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
         else:
-            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone}")
+            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {killers_ship}")
 
         # Announce kill in Discord
         channel = bot.get_channel(CHANNEL_SC_PUBLIC)
-        if channel:
-            asyncio.run_coroutine_threadsafe(
-                channel.send(f"☠️ **{player}** killed **{victim}** using **{weapon}** in **{zone}**."),
-                bot.loop
-            )
-            now = datetime.utcnow().timestamp()
-            # Kill streaks
-            recent = [t for t in kill_history[player] if now - t <= 120]
-            if len(recent) >= 5:
+        if success and channel:
+            try:
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"🔥 {player} is on a **5-kill streak in 120s!**"),
+                    channel.send(f"☠️ **{player}** killed **{victim}** using **{weapon}** in **{zone}**."),
                     bot.loop
                 )
-            elif len([t for t in kill_history[player] if now - t <= 60]) >= 3:
-                asyncio.run_coroutine_threadsafe(
-                    channel.send(f"⚡ {player} is on a **3-kill streak in 60s!**"),
-                    bot.loop
-                )
+                now = datetime.utcnow().timestamp()
+                # Kill streaks
+                recent = [t for t in kill_history[player] if now - t <= 120]
+                if len(recent) >= 5:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"🔥 {player} is on a **5-kill streak in 120s!**"),
+                        bot.loop
+                    )
+                elif len([t for t in kill_history[player] if now - t <= 60]) >= 3:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ {player} is on a **3-kill streak in 60s!**"),
+                        bot.loop
+                    )
 
-            # Milestones
-            if player_kills[player] % 10 == 0:
-                asyncio.run_coroutine_threadsafe(
-                    channel.send(f"🏆 {player} reached **{player_kills[player]} kills!**"),
-                    bot.loop
-                )
+                # Milestones
+                if player_kills[player] % 10 == 0:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"🏆 {player} reached **{player_kills[player]} kills!**"),
+                        bot.loop
+                    )
+            except Exception as e:
+                logger.error(f"Unexpected error sending kill announcement: {e}")
+    return success
 
 # ---------------------------------------------------------------------------
 # API Server for Website Requests
@@ -267,32 +320,49 @@ def get_api_key():
         return jsonify({"error": "Missing discord_id"}), 400
 
     # Check if user already has an API key
-    cur = conn.cursor()
-    cur.execute("SELECT api_key FROM api_keys WHERE discord_id = %s", (discord_id,))
-    ret = cur.fetchone()
+    success = False
     api_key = None
-    if ret:
-        api_key = ret[0]
-        print("API key found")
-        logger.info(f"Existing API key for {discord_id} retrieved")
-    else:
-        print("No API key found, generating new one")
-        api_key = secrets.token_hex(16)
-        print(f"Generated API key: { api_key }")
-        cur.execute(
-            """
-            INSERT INTO api_keys (discord_id, api_key)
-            VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE api_key = VALUES(api_key),
-                                    created_at = CURRENT_TIMESTAMP
-            """,
-            (discord_id, api_key),
-        )
-        conn.commit()
-        print("Generated new API key")
-        logger.info(f"Generated new API key for {discord_id}")
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT api_key FROM api_keys WHERE discord_id = %s", (discord_id,))
+        ret = cursor.fetchone()
+        if ret:
+            api_key = ret[0]
+            print("API key found")
+            logger.info(f"Existing API key for {discord_id} retrieved")
+        else:
+            print("No API key found, generating new one")
+            api_key = secrets.token_hex(16)
+            print(f"Generated API key: { api_key }")
+            cursor.execute(
+                """
+                INSERT INTO api_keys (discord_id, api_key)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE api_key = VALUES(api_key),
+                                        created_at = CURRENT_TIMESTAMP
+                """,
+                (discord_id, api_key),
+            )
+            conn.commit()
+            print("Generated new API key")
+            logger.info(f"Generated new API key for {discord_id}")
+        success = True
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in get_api_key: {err}")
+    except Exception as e:
+        logger.error(f"Unexpected error in get_api_key: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    return jsonify({"api_key": api_key})
+    if success:
+        return jsonify({"api_key": api_key}), 200
+    else:
+        return jsonify({"error": "Failed to get API key"}), 500
+
 
 # JSON Payload Example:
 # { "api_key": key,
@@ -307,17 +377,35 @@ def validate_key():
     player_name = data.get("player_name")
 
     # Determine if API key exists, then update rsi_handle if needed
-    cur = conn.cursor()
-    cur.execute("SELECT discord_id, rsi_handle FROM api_keys WHERE api_key = %s", (api_key,))
-    ret = cur.fetchone()
-    if not ret:
-        return jsonify({"error": "Invalid API key"}), 403
-    discord_id, rsi_handle = ret
-    if player_name and rsi_handle != player_name:
-        cur.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
-        conn.commit()
+    success = False
+    try:
+        dicord_id = None
+        rsi_handle = None
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT discord_id, rsi_handle FROM api_keys WHERE api_key = %s", (api_key,))
+        ret = cursor.fetchone()
+        if ret:
+            discord_id, rsi_handle = ret
+            if player_name and rsi_handle != player_name:
+                cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
+                conn.commit()
+            success = True
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in validate_key: {err}")
+    except Exception as e:
+        logger.error(f"Unexpected error in validate_key: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    return jsonify({"success": True, "discord_id": discord_id}), 200
+    if success:
+        return jsonify({"success": True, "discord_id": discord_id}), 200
+    else:
+        return jsonify({"error": "Invalid API key or internal server error"}), 403
+
 
 # JSON Payload Example:
 # { "api_key": key,
@@ -332,19 +420,37 @@ def get_expiration():
     player_name = data.get("player_name")
 
     # Determine if API key exists, then update rsi_handle if needed
-    cur = conn.cursor()
-    cur.execute("SELECT discord_id, rsi_handle, created_at FROM api_keys WHERE api_key = %s", (api_key,))
-    ret = cur.fetchone()
-    if not ret:
-        return jsonify({"error": "Invalid API key"}), 403
-    discord_id, rsi_handle, created_at = ret
-    if player_name and rsi_handle != player_name:
-        cur.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
-        conn.commit()
-    expiration_date = created_at + timedelta(days=180)
-    # Convert expiration_date to work with datetime.strptime()
-    expiration_date = expiration_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    return jsonify({"success": True, "expires_at": expiration_date}), 200
+    expiration_date = None
+    success = False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT discord_id, rsi_handle, created_at FROM api_keys WHERE api_key = %s", (api_key,))
+        ret = cursor.fetchone()
+        if ret:
+            discord_id, rsi_handle, created_at = ret
+            if player_name and rsi_handle != player_name:
+                cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
+                conn.commit()
+            expiration_date = created_at + timedelta(days=180)
+            # Convert expiration_date to work with datetime.strptime()
+            expiration_date = expiration_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            success = True
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in get_expiration: {err}")
+    except Exception as e:
+        logger.error(f"Unexpected error in get_expiration: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+    if success:
+        return jsonify({"success": True, "expires_at": expiration_date}), 200
+    else:
+        return jsonify({"error": "get_expiration - Invalid API key or internal server error"}), 403
+
 
 # GET requests for various data maps
 @app.route("/data_map/weapons", methods=["GET"])
@@ -420,8 +526,10 @@ def report_kill():
     result = data.get("result")
     details = data.get("data", {})
 
-    process_kill(result, details, store_in_db=True)
-    return jsonify({"success": True}), 200
+    if process_kill(result, details, store_in_db=True):
+        return jsonify({"success": True}), 200
+    else:
+        return jsonify({"error": "Failed to process kill"}), 500
 
 #@app.route("/reportACKill", methods=["POST"])
 
