@@ -187,13 +187,13 @@ async def weekly_tally():
 # Commands
 # ---------------------------------------------------------------------------
 @bot.command()
-async def kill(ctx, player:str):
+async def testkill(ctx, player:str):
     """Simulate recording a PvP kill (testing only)."""
     details = {
         'discord_id': ctx.author.id,
-        'player': "BWC",
+        'player': ctx.author.display_name,
         'victim': player,
-        'time': datetime.utcnow().timestamp(),
+        'time': "<2025-10-02T22:57:03.975Z>",
         'zone': "Zone Name",
         'weapon': "Weapon Name",
         'game_mode': "Test",
@@ -221,10 +221,11 @@ def process_kill(result:str, details:object, store_in_db:bool):
     discord_id = "N/A"
     player = "BWC" # Default to "BWC" if anonymized
     if(anonymize_state["enabled"]):
+        logger.info("Reporting anonymized kill")
+    else:
         discord_id = details.get("discord_id")
         player = details.get("player")
-        logger.info("Anonymized kill reported")
-    
+
     success = True
     if result == "killer":
         victim = details.get("victim")
