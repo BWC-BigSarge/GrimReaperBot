@@ -216,6 +216,49 @@ async def weeklytally_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
+# Sample JSON Payloads:
+# Current user killed themselves
+#{
+#    "result": "suicide",
+#    "data": {
+#        "discord_id": discord_id,
+#        "player": curr_user,
+#        "weapon": weapon,
+#        "zone": killed_zone
+#        "anonymize_state": self.anonymize_state
+#    }
+#}
+#
+# Current user died
+#{
+#    "result": "killed",
+#    "data": {
+#        "discord_id": discord_id,
+#        "player": curr_user,
+#        "victim": curr_user,
+#        "killer": killer,
+#        "weapon": mapped_weapon,
+#        "zone": self.active_ship["current"]
+#        "anonymize_state": self.anonymize_state
+#    }
+#}
+#
+# Current user killed other player
+#{
+#    "result": "killer",
+#    "data": {
+#        "discord_id": discord_id,
+#        "player": curr_user,
+#        "victim": killed,
+#        "time": kill_time,
+#        "zone": killed_zone,
+#        "weapon": weapon,
+#        "game_mode": self.game_mode,
+#        "client_ver": self.local_version,
+#        "killers_ship": self.active_ship["current"],
+#        "anonymize_state": self.anonymize_state
+#     }
+#}
 def process_kill(result:str, details:object, store_in_db:bool):
     anonymize_state = details.get("anonymize_state")
     discord_id = "N/A"
@@ -302,6 +345,13 @@ def process_kill(result:str, details:object, store_in_db:bool):
                     )
             except Exception as e:
                 logger.error(f"Unexpected error sending kill announcement: {e}")
+    elif result == "killed":
+        logger.info(f"Reporting killed player: {player}")
+    elif result == "suicide":
+        logger.info(f"Reporting suicide: {player}")
+    else:
+        logger.warning(f"Unhandled kill result type: {result}")
+        success = False
     return success
 
 # ---------------------------------------------------------------------------
@@ -478,49 +528,6 @@ def get_data_map_ignoredVictimRules():
     ret_json["ignoredVictimRules"] = data_map.ignoredVictimRules
     return jsonify(ret_json)
 
-# Sample JSON Payloads:
-# Current user killed themselves
-#{
-#    "result": "suicide",
-#    "data": {
-#        "discord_id": discord_id,
-#        "player": curr_user,
-#        "weapon": weapon,
-#        "zone": killed_zone
-#        "anonymize_state": self.anonymize_state
-#    }
-#}
-#
-# Current user died
-#{
-#    "result": "killed",
-#    "data": {
-#        "discord_id": discord_id,
-#        "player": curr_user,
-#        "victim": curr_user,
-#        "killer": killer,
-#        "weapon": mapped_weapon,
-#        "zone": self.active_ship["current"]
-#        "anonymize_state": self.anonymize_state
-#    }
-#}
-#
-# Current user killed other player
-#{
-#    "result": "killer",
-#    "data": {
-#        "discord_id": discord_id,
-#        "player": curr_user,
-#        "victim": killed,
-#        "time": kill_time,
-#        "zone": killed_zone,
-#        "weapon": weapon,
-#        "game_mode": self.game_mode,
-#        "client_ver": self.local_version,
-#        "killers_ship": self.active_ship["current"],
-#        "anonymize_state": self.anonymize_state
-#     }
-#}
 @app.route("/reportKill", methods=["POST"])
 def report_kill():
     data = request.json
