@@ -5,3 +5,4 @@ apscheduler
 sqlalchemy
 mysql.connector
 flask
+waitress

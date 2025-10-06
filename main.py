@@ -15,6 +15,7 @@ from collections import defaultdict
 #from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 from flask import Flask, request, jsonify
+from waitress import serve
 import threading
 import secrets
 
@@ -261,13 +262,14 @@ async def weeklytally_error(ctx, error):
 #}
 def process_kill(result:str, details:object, store_in_db:bool):
     anonymize_state = details.get("anonymize_state")
+    logger.info(f"Anonymize State: {anonymize_state}")
     discord_id = "N/A"
     player = "BWC" # Default to "BWC" if anonymized
-    if(anonymize_state["enabled"]):
-        logger.info("Reporting anonymized kill")
-    else:
-        discord_id = details.get("discord_id")
-        player = details.get("player")
+    #if(anonymize_state["enabled"]):
+    #    logger.info("Reporting anonymized kill")
+    #else:
+    discord_id = details.get("discord_id")
+    player = details.get("player")
 
     success = True
     if result == "killer":
@@ -320,7 +322,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
         if success and channel:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"☠️ **{player}** killed **{victim}** using **{weapon}** in **{zone}**."),
+                    channel.send(f"**{player}** killed **{victim}** ☠️\n```using {weapon} at {zone}```"),
                     bot.loop
                 )
                 now = datetime.utcnow().timestamp()
@@ -361,14 +363,19 @@ app = Flask("GrimReaperBotAPI")
 
 @app.route("/get_api_key", methods=["POST"])
 def get_api_key():
-    # Authenticate request
-    data = request.json
-    if not data or data.get("secret") != API_SHARED_SECRET:
-        return jsonify({"error": "Unauthorized"}), 403
+    discord_id = None
+    try:
+        # Authenticate request
+        data = request.json
+        if not data or data.get("secret") != API_SHARED_SECRET:
+            return jsonify({"error": "Unauthorized"}), 403
 
-    discord_id = data.get("discord_id")
-    if not discord_id:
-        return jsonify({"error": "Missing discord_id"}), 400
+        discord_id = data.get("discord_id")
+        if not discord_id:
+            return jsonify({"error": "Missing discord_id"}), 400
+    except Exception as e:
+        logger.error(f"Unexpected error in get_api_key: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
     # Check if user already has an API key
     success = False
@@ -380,12 +387,12 @@ def get_api_key():
         ret = cursor.fetchone()
         if ret:
             api_key = ret[0]
-            print("API key found")
+            logger.info("API key found")
             logger.info(f"Existing API key for {discord_id} retrieved")
         else:
-            print("No API key found, generating new one")
+            logger.info("No API key found, generating new one")
             api_key = secrets.token_hex(16)
-            print(f"Generated API key: { api_key }")
+            logger.info(f"Generated API key: { api_key }")
             cursor.execute(
                 """
                 INSERT INTO api_keys (discord_id, api_key)
@@ -420,12 +427,20 @@ def get_api_key():
 #   "player_name": self.rsi_handle["current"] }
 @app.route("/validateKey", methods=["POST"])
 def validate_key():
-    data = request.json
-    if not data:
-        return jsonify({"error": "Unauthorized"}), 403
+    api_key = None
+    player_name = None
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Unauthorized"}), 403
 
-    api_key = data.get("api_key")
-    player_name = data.get("player_name")
+        api_key = data.get("api_key")
+        player_name = data.get("player_name")
+        if not api_key:
+            return jsonify({"error": "Missing api_key"}), 400
+    except Exception as e:
+        logger.error(f"Unexpected error in validate_key: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
     # Determine if API key exists, then update rsi_handle if needed
     success = False
@@ -463,12 +478,20 @@ def validate_key():
 #   "player_name": self.rsi_handle["current"] }
 @app.route("/get_expiration", methods=["POST"])
 def get_expiration():
-    data = request.json
-    if not data:
-        return jsonify({"error": "Unauthorized"}), 403
+    api_key = None
+    player_name = None
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Unauthorized"}), 403
 
-    api_key = data.get("api_key")
-    player_name = data.get("player_name")
+        api_key = data.get("api_key")
+        player_name = data.get("player_name")
+        if not api_key:
+            return jsonify({"error": "Missing api_key"}), 400
+    except Exception as e:
+        logger.error(f"Unexpected error in get_expiration: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
     # Determine if API key exists, then update rsi_handle if needed
     expiration_date = None
@@ -539,17 +562,16 @@ def report_kill():
     else:
         return jsonify({"error": "Failed to process kill"}), 500
 
-#@app.route("/reportACKill", methods=["POST"])
-
-def run_api():
-    app.run(host="0.0.0.0", port=25219)
-
-api_thread = threading.Thread(target=run_api, daemon=True)
-api_thread.start()
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def run_waitress():
+    serve(app, host='0.0.0.0', port=25219)
+
 if __name__ == "__main__":
     load_dotenv()
+
+    waitress_thread = threading.Thread(target=run_waitress, daemon=True)
+    waitress_thread.start()
+
     bot.run(os.getenv("DISCORD_TOKEN"))

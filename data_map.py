@@ -425,6 +425,20 @@ vehicleMapping = {
     "TMBL_Nova":"Nova 'Thick' Tonk"
 }
 
+gameModeMapping = {
+    "SC_Frontend": "Main Menu",
+    "SC_Default": "Persistent Universe",
+    "EA_SquadronBattle": "Squadron Battle",
+    "EA_FreeFlight": "Free Flight",
+    "EA_FPSGunGame": "Gun Game",
+    "EA_FPSKillConfirmed": "Kill Confirmed",
+    'EA_Elimination': "Elimination",
+    'EA_TeamElimination': "Team Elimination",
+    "EA_TonkRoyale_FreeForAll":"Tonk Battles",
+    "EA_Elimination_XOnly":"Single Weapon Elim",
+    "Bot_Testing":"Bot_Testing",
+}
+
 # Rules for ignoring certain victims (e.g., NPCs, non-player entities)
 ignoredVictimRules = [
     { "type": "substring",  "value": "kopion" },
