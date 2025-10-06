@@ -322,7 +322,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
         if success and channel:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"**{player}** killed **{victim}** ☠️\n```using {weapon} at {zone}```"),
+                    channel.send(f"**{player}** killed **{victim}** ☠️\n>using {weapon} at {zone}"),
                     bot.loop
                 )
                 now = datetime.utcnow().timestamp()
@@ -533,16 +533,22 @@ def get_data_map_weapons():
     ret_json["weapons"] = data_map.weaponMapping
     return jsonify(ret_json)
 
-@app.route("/data_map/locations", methods=["GET"])
-def get_data_map_locations():
+@app.route("/data_map/zones", methods=["GET"])
+def get_data_map_zones():
     ret_json = {}
-    ret_json["locations"] = data_map.locationMapping
+    ret_json["zones"] = data_map.zonesMapping
     return jsonify(ret_json)
 
 @app.route("/data_map/vehicles", methods=["GET"])
 def get_data_map_vehicles():
     ret_json = {}
     ret_json["vehicles"] = data_map.vehicleMapping
+    return jsonify(ret_json)
+
+@app.route("/data_map/gameModes", methods=["GET"])
+def get_data_map_game_modes():
+    ret_json = {}
+    ret_json["gameModes"] = data_map.gameModeMapping
     return jsonify(ret_json)
 
 @app.route("/data_map/ignoredVictimRules", methods=["GET"])

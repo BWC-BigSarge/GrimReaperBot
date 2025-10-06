@@ -200,7 +200,7 @@ weaponMapping = {
     "apar_special_ballistic_02": "Animus Missile Launcher"
 }
 
-locationMapping = {
+zonesMapping = {
     # Ground Zones
     "p2l4_contestedzone": "Contested Zone",
     "ab_pyro_int_dung":"Security Keycard Zone Interior",
