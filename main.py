@@ -198,8 +198,8 @@ async def testkill(ctx, player:str):
         'zone': "Zone Name",
         'weapon': "Weapon Name",
         'game_mode': "Test",
+        'current_ship': "Ship Name",
         'client_ver': "N/A",
-        'killers_ship': "Ship Name",
         'anonymize_state': {'enabled': False }
     }
     process_kill("killer", details, store_in_db=False)
@@ -222,11 +222,16 @@ async def weeklytally_error(ctx, error):
 #{
 #    "result": "suicide",
 #    "data": {
-#        "discord_id": discord_id,
-#        "player": curr_user,
-#        "weapon": weapon,
-#        "zone": killed_zone
-#        "anonymize_state": self.anonymize_state
+#        'discord_id': self.discord_id["current"],
+#        'player': curr_user,
+#        'victim': curr_user,
+#        'time': kill_time,
+#        'zone': zone,
+#        'weapon': weapon,
+#        'game_mode': self.game_mode,
+#        'current_ship': self.active_ship["current"],
+#        'client_ver': self.local_version,
+#        'anonymize_state': {'enabled': False }
 #    }
 #}
 #
@@ -234,13 +239,16 @@ async def weeklytally_error(ctx, error):
 #{
 #    "result": "killed",
 #    "data": {
-#        "discord_id": discord_id,
-#        "player": curr_user,
-#        "victim": curr_user,
-#        "killer": killer,
-#        "weapon": mapped_weapon,
-#        "zone": self.active_ship["current"]
-#        "anonymize_state": self.anonymize_state
+#        'discord_id': self.discord_id["current"],
+#        'player': killer,
+#        'victim': curr_user,
+#        'time': kill_time,
+#        'zone': self.active_ship["current"],
+#        'weapon': weapon,
+#        'game_mode': self.game_mode,
+#        'current_ship': self.active_ship["current"],
+#        'client_ver': self.local_version,
+#        'anonymize_state': {'enabled': False }
 #    }
 #}
 #
@@ -252,46 +260,50 @@ async def weeklytally_error(ctx, error):
 #        "player": curr_user,
 #        "victim": killed,
 #        "time": kill_time,
-#        "zone": killed_zone,
+#        "zone": zone,
 #        "weapon": weapon,
 #        "game_mode": self.game_mode,
+#        "current_ship": self.active_ship["current"],
 #        "client_ver": self.local_version,
-#        "killers_ship": self.active_ship["current"],
-#        "anonymize_state": self.anonymize_state
+#        "anonymize_state": {'enabled': False }
 #     }
 #}
 def process_kill(result:str, details:object, store_in_db:bool):
-    anonymize_state = details.get("anonymize_state")
-    logger.info(f"Anonymize State: {anonymize_state}")
-    discord_id = "N/A"
-    player = "BWC" # Default to "BWC" if anonymized
-    #if(anonymize_state["enabled"]):
-    #    logger.info("Reporting anonymized kill")
-    #else:
     discord_id = details.get("discord_id")
     player = details.get("player")
+    victim = details.get("victim")
+    
+    # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
+    kill_time = details.get("time")
+    if kill_time:
+        kill_time = kill_time.strip("<>")
+        kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+    
+    zone = details.get("zone")
+    weapon = details.get("weapon")
+    game_mode = details.get("game_mode")
+    client_ver = details.get("client_ver")
+
+    if client_ver == "0.2.0":
+        current_ship = details.get("killers_ship")
+    else:
+        current_ship = details.get("current_ship")
+
+    anonymize_state = details.get("anonymize_state")
+    if(anonymize_state.get("enabled")):
+        logger.info("Reporting anonymized kill")
+        discord_id = "N/A"
+        player = "[BWC]"
 
     success = True
     if result == "killer":
-        victim = details.get("victim")
-        kill_time = details.get("time")
-        zone = details.get("zone")
-        weapon = details.get("weapon")
-        game_mode = details.get("game_mode")
-        client_ver = details.get("client_ver")
-        killers_ship = details.get("killers_ship")
-
-        # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
-        kill_time = kill_time.strip("<>")
-        kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
-
         # Record kill in memory
         kill_history[player].append(kill_time.timestamp())
         player_kills[player] += 1
 
         # Record kill in database
         if store_in_db:
-            logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone}")
+            logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
             try:
                 conn = get_connection()
                 cursor = conn.cursor()
@@ -300,7 +312,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
                         INSERT INTO kill_feed (discord_id, rsi_handle, victim, time, zone, weapon, game_mode, client_ver, killers_ship)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
-                        (discord_id, player, victim, kill_time, zone, weapon, game_mode, client_ver, killers_ship)
+                        (discord_id, player, victim, kill_time, zone, weapon, game_mode, client_ver, current_ship)
                     )
                 conn.commit()
             except mysql.connector.Error as err:
@@ -315,7 +327,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 if conn:
                     conn.close()
         else:
-            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {killers_ship}")
+            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
         # Announce kill in Discord
         channel = bot.get_channel(CHANNEL_SC_PUBLIC)
@@ -348,9 +360,9 @@ def process_kill(result:str, details:object, store_in_db:bool):
             except Exception as e:
                 logger.error(f"Unexpected error sending kill announcement: {e}")
     elif result == "killed":
-        logger.info(f"Reporting killed player: {player}")
+        logger.info(f"Reporting killed player: {victim} with ship {current_ship} playing {game_mode}, killed by {player} with {weapon} in {zone}")
     elif result == "suicide":
-        logger.info(f"Reporting suicide: {player}")
+        logger.info(f"Reporting suicide: {victim} with ship {current_ship} playing {game_mode}, died by {weapon} in {zone}")
     else:
         logger.warning(f"Unhandled kill result type: {result}")
         success = False
@@ -521,6 +533,7 @@ def get_expiration():
             conn.close()
 
     if success:
+        logger.info(f"{player_name} pinged host")
         return jsonify({"success": True, "expires_at": expiration_date}), 200
     else:
         return jsonify({"error": "get_expiration - Invalid API key or internal server error"}), 403
