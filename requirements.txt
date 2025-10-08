@@ -6,3 +6,5 @@ sqlalchemy
 mysql.connector
 flask
 waitress
+fuzzywuzzy
+python-Levenshtein

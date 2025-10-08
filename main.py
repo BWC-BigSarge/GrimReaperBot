@@ -10,14 +10,13 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from collections import defaultdict
-
 #from apscheduler.schedulers.asyncio import AsyncIOScheduler
 #from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-
 from flask import Flask, request, jsonify
 from waitress import serve
 import threading
 import secrets
+from fuzzywuzzy import fuzz
 
 import data_map # Human readable mappings for various log entries
 
@@ -28,11 +27,10 @@ description = """
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
                        BWC-KillTracker for Star Citizen
      (Tracks kills/deaths and other metrics that occur for members of BWC)
-     
-     Vibe coded by: BWC-Firely
-         (https://robertsspaceindustries.com/en/citizens/BWC-Firefly)
-     Re-Coded by: Game_Overture
+     Developed by Game_Overture
          (https://robertsspaceindustries.com/citizens/Game_Overture)
+     Original concept BWC-Firefly
+         (https://robertsspaceindustries.com/en/citizens/BWC-Firefly)
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
@@ -95,7 +93,7 @@ async def on_ready():
             "database": os.getenv("DB_DATABASE")
         }
         cnxpool = pooling.MySQLConnectionPool(pool_name="mypool",
-                                              pool_size=5,
+                                              pool_size=8,
                                               **dbconfig)
         logger.info("Database connection pool established")
         
@@ -117,12 +115,12 @@ async def on_ready():
                     discord_id VARCHAR(24) NOT NULL,
                     rsi_handle VARCHAR(42) NOT NULL,
                     victim VARCHAR(42) NOT NULL,
-                    time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    zone VARCHAR(64),
                     weapon VARCHAR(64),
+                    zone VARCHAR(64),
+                    current_ship VARCHAR(64),
                     game_mode VARCHAR(42),
-                    client_ver VARCHAR(10),
-                    killers_ship VARCHAR(64)
+                    time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    client_ver VARCHAR(10)
                 )
                 """)
             except mysql.connector.Error as err:
@@ -225,7 +223,7 @@ async def weeklytally_error(ctx, error):
 #        'discord_id': self.discord_id["current"],
 #        'player': curr_user,
 #        'victim': curr_user,
-#        'time': kill_time,
+#        'time': "<2025-10-02T22:57:03.975Z>",
 #        'zone': zone,
 #        'weapon': weapon,
 #        'game_mode': self.game_mode,
@@ -242,7 +240,7 @@ async def weeklytally_error(ctx, error):
 #        'discord_id': self.discord_id["current"],
 #        'player': killer,
 #        'victim': curr_user,
-#        'time': kill_time,
+#        'time': "<2025-10-02T22:57:03.975Z>",
 #        'zone': self.active_ship["current"],
 #        'weapon': weapon,
 #        'game_mode': self.game_mode,
@@ -256,10 +254,10 @@ async def weeklytally_error(ctx, error):
 #{
 #    "result": "killer",
 #    "data": {
-#        "discord_id": discord_id,
+#        "discord_id": self.discord_id["current"],
 #        "player": curr_user,
 #        "victim": killed,
-#        "time": kill_time,
+#        "time": "<2025-10-02T22:57:03.975Z>",
 #        "zone": zone,
 #        "weapon": weapon,
 #        "game_mode": self.game_mode,
@@ -272,28 +270,22 @@ def process_kill(result:str, details:object, store_in_db:bool):
     discord_id = details.get("discord_id")
     player = details.get("player")
     victim = details.get("victim")
-    
-    # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
-    kill_time = details.get("time")
+    kill_time = details.get("time") # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
     if kill_time:
         kill_time = kill_time.strip("<>")
         kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
-    
     zone = details.get("zone")
     weapon = details.get("weapon")
     game_mode = details.get("game_mode")
     client_ver = details.get("client_ver")
-
-    if client_ver == "0.2.0":
-        current_ship = details.get("killers_ship")
-    else:
-        current_ship = details.get("current_ship")
-
+    current_ship = details.get("current_ship")
     anonymize_state = details.get("anonymize_state")
     if(anonymize_state.get("enabled")):
         logger.info("Reporting anonymized kill")
         discord_id = "N/A"
         player = "[BWC]"
+
+    weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
 
     success = True
     if result == "killer":
@@ -309,10 +301,10 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 cursor = conn.cursor()
                 cursor.execute(
                         """
-                        INSERT INTO kill_feed (discord_id, rsi_handle, victim, time, zone, weapon, game_mode, client_ver, killers_ship)
+                        INSERT INTO kill_feed (discord_id, rsi_handle, victim, weapon, zone, current_ship, game_mode, time_stamp, client_ver)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
-                        (discord_id, player, victim, kill_time, zone, weapon, game_mode, client_ver, current_ship)
+                        (discord_id, player, victim, weapon, zone, current_ship, game_mode, kill_time, client_ver)
                     )
                 conn.commit()
             except mysql.connector.Error as err:
@@ -330,11 +322,13 @@ def process_kill(result:str, details:object, store_in_db:bool):
             logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
         # Announce kill in Discord
+        #zone_human_readable = convert_string(data_map.zonesMapping, zone, fuzzy_search=True)
+        # game_mode == "SC_Default"
         channel = bot.get_channel(CHANNEL_SC_PUBLIC)
         if success and channel:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"**{player}** killed **{victim}** ☠️\n>using {weapon} at {zone}"),
+                    channel.send(f"**{player}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
                     bot.loop
                 )
                 now = datetime.utcnow().timestamp()
@@ -342,17 +336,17 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 recent = [t for t in kill_history[player] if now - t <= 120]
                 if len(recent) >= 5:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥 {player} is on a **5-kill streak in 120s!**"),
+                        channel.send(f"🔥 {player} is on a **5-kill streak!**"),
                         bot.loop
                     )
                 elif len([t for t in kill_history[player] if now - t <= 60]) >= 3:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ {player} is on a **3-kill streak in 60s!**"),
+                        channel.send(f"⚡ {player} is on a **3-kill streak!**"),
                         bot.loop
                     )
 
                 # Milestones
-                if player_kills[player] % 10 == 0:
+                if player_kills[player] % 50 == 0:
                     asyncio.run_coroutine_threadsafe(
                         channel.send(f"🏆 {player} reached **{player_kills[player]} kills!**"),
                         bot.loop
@@ -368,6 +362,34 @@ def process_kill(result:str, details:object, store_in_db:bool):
         success = False
     return success
 
+# NOTE: This is a synomous function used in BlackWidowCompanyKilltracker (LogParser class) - Changes or enhancements should be mirrored to it
+def convert_string(self, data_map, src_string:str, fuzzy_search=bool) -> str:
+    """Get the best human readable string from the established data maps"""
+    try:
+        if fuzzy_search:
+            fuzzy_found_dict = {}
+            for key, value in data_map.items():
+                pts = fuzz.ratio(key, src_string)
+                if pts >= 90:
+                    fuzzy_found_dict[value] = pts
+        
+            if len(fuzzy_found_dict) > 0:
+                # Sort the fuzzy matches by their score and return the best match
+                sorted_fuzzy = dict(sorted(fuzzy_found_dict.items(), key=lambda item: item[1], reverse=True))
+                return list(sorted_fuzzy.keys())[0]
+        else:
+            best_key_match = ""
+            for key in data_map.keys():
+                # if src_string contains key
+                if src_string.startswith(key):
+                    if len(key) > len(best_key_match):
+                        best_key_match = key
+            if best_key_match:
+                return data_map[best_key_match]
+    except Exception as e:
+        print(f"Error in convert_string: {e}")
+    return src_string
+
 # ---------------------------------------------------------------------------
 # API Server for Website Requests
 # ---------------------------------------------------------------------------
@@ -375,6 +397,7 @@ app = Flask("GrimReaperBotAPI")
 
 @app.route("/get_api_key", methods=["POST"])
 def get_api_key():
+    logger.info("entering get_api_key")
     discord_id = None
     try:
         # Authenticate request
@@ -388,6 +411,8 @@ def get_api_key():
     except Exception as e:
         logger.error(f"Unexpected error in get_api_key: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+    logger.info(f"get_api_key called for discord_id: {discord_id}")
 
     # Check if user already has an API key
     success = False
@@ -415,7 +440,6 @@ def get_api_key():
                 (discord_id, api_key),
             )
             conn.commit()
-            print("Generated new API key")
             logger.info(f"Generated new API key for {discord_id}")
         success = True
     except mysql.connector.Error as err:
