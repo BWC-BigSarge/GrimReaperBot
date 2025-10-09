@@ -363,7 +363,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
     return success
 
 # NOTE: This is a synomous function used in BlackWidowCompanyKilltracker (LogParser class) - Changes or enhancements should be mirrored to it
-def convert_string(self, data_map, src_string:str, fuzzy_search=bool) -> str:
+def convert_string(data_map, src_string:str, fuzzy_search=bool) -> str:
     """Get the best human readable string from the established data maps"""
     try:
         if fuzzy_search:
