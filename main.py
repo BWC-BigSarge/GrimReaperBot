@@ -206,7 +206,7 @@ async def weekly_tally():
     if not channel:
         logger.error(f"Channel ID {CHANNEL_SC_ANNOUNCEMENTS} not found.")
         return
-    # Format the message
+    # Format the message with two columns
     message_lines = ["🏆 **Weekly Kill Tally** 🏆", "Here are the top killers from the past week:"]
     for idx, (discord_id, kill_count) in enumerate(sorted_kills[:10], start=1):
         message_lines.append(f"**{idx}. <@{discord_id}>** - {kill_count} kills")
@@ -261,7 +261,7 @@ async def total_kills(ctx):
         await ctx.send("❌ Unable to retrieve your kill count.")
 
 @bot.command(name="weeklytally")
-@commands.has_role(ADMIN_ROLE_NAME)
+#@commands.has_role(ADMIN_ROLE_NAME)
 async def manual_weekly_tally(ctx):
     """Manually trigger the weekly tally (Admin only)."""
     await weekly_tally()
@@ -503,7 +503,8 @@ def process_kill(result:str, details:object, store_in_db:bool):
                     bwc_name = member.display_name
                 else:
                     try:
-                        member = bot.fetch_user(discord_id_as_int)
+                        future = asyncio.run_coroutine_threadsafe(bot.fetch_user(discord_id_as_int), bot.loop)
+                        member = future.result(timeout=5)
                         logger.info(f"Fetched Discord member: {member}")
                         if member:
                             bwc_name = member.display_name
