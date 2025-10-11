@@ -1,4 +1,5 @@
 # main.py - Discord bot for tracking kills/deaths in Star Citizen for BWC members
+import dis
 import os
 from time import sleep
 from dotenv import load_dotenv
@@ -76,8 +77,8 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", description=description, intents=intents)
 
 # Track kills in memory
-kill_history = defaultdict(list)  # {discord_id: [timestamps]}
-player_kills = defaultdict(int)   # {discord_id: total kills}
+g_kill_timestamps = defaultdict(list)  # {discord_id: [timestamps]}
+g_kill_streaks = defaultdict(int)   # {discord_id: total kills}
 
 # ---------------------------------------------------------------------------
 # Database Connection Pool
@@ -215,6 +216,27 @@ async def weekly_tally():
     except Exception as e:
         logger.error(f"Error posting weekly tally: {e}")
 
+def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills if successful
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
+        ret = cursor.fetchone()
+        if ret:
+            total = ret[0]
+            return total
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in total_kills: {err}")
+        return -1
+    except Exception as e:
+        logger.error(f"Unexpected error in total_kills: {e}")
+        return -1
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+    return -1
 
 # # Add job if it doesn’t exist
 # if not scheduler.get_job("weekly_tally"):
@@ -231,28 +253,11 @@ async def weekly_tally():
 # ---------------------------------------------------------------------------
 @bot.command(name="totalkills")
 async def total_kills(ctx):
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        discord_id = str(ctx.author.id)
-        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
-        ret = cursor.fetchone()
-        if ret:
-            total = ret[0]
-            await ctx.send(f"✅ You have a total of {total} recorded kills.")
-        else:
-            await ctx.send("❌ Unable to retrieve your kill count.")
-    except mysql.connector.Error as err:
-        logger.error(f"Database error in total_kills: {err}")
-        await ctx.send("❌ Database error occurred while retrieving your kill count.")
-    except Exception as e:
-        logger.error(f"Unexpected error in total_kills: {e}")
-        await ctx.send("❌ An unexpected error occurred while retrieving your kill count.")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    total_kills = db_total_kills(str(ctx.author.id))
+    if total_kills >= 0:
+        await ctx.send(f"✅ You have a total of {total_kills} recorded kills.")
+    else:
+        await ctx.send("❌ Unable to retrieve your kill count.")
 
 @bot.command(name="weeklytally")
 @commands.has_role(ADMIN_ROLE_NAME)
@@ -355,14 +360,14 @@ async def revoke_key_error(ctx, error):
 async def testkill(ctx, player:str):
     """Simulate recording a PvP kill (testing only)."""
     details = {
-        'discord_id': ctx.author.id,
-        'player': ctx.author.display_name,
+        'discord_id': str(ctx.author.id),
+        'player': "Test_RSI_Name",
         'victim': player,
         'time': "<2025-10-02T22:57:03.975Z>",
-        'zone': "Zone Name",
-        'weapon': "Weapon Name",
-        'game_mode': "Test",
-        'current_ship': "Ship Name",
+        'zone': "Test_Zone",
+        'weapon': "Test_Weapon",
+        'game_mode': "Test_Mode",
+        'current_ship': "Test_Ship",
         'client_ver': "N/A",
         'anonymize_state': {'enabled': False }
     }
@@ -443,10 +448,12 @@ def process_kill(result:str, details:object, store_in_db:bool):
     success = True
     if result == "killer":
         # Record kill in memory
-        kill_history[discord_id].append(kill_time.timestamp())
-        player_kills[discord_id] += 1
+        g_kill_timestamps[discord_id].append(kill_time.timestamp())
+        g_kill_streaks[discord_id] += 1
 
+        # ------------------------------------------------------------------------------------------
         # Record kill in database
+        # ------------------------------------------------------------------------------------------
         if store_in_db:
             logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
             try:
@@ -474,8 +481,9 @@ def process_kill(result:str, details:object, store_in_db:bool):
         else:
             logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
+        # ------------------------------------------------------------------------------------------
         # Announce kill in Discord
-
+        # ------------------------------------------------------------------------------------------
         bwc_name = player
         # Reassign bwc_name to how their name is formatted in Discord. Using discord_id, find their member object, and get their display name from it
         member_list = bot.get_all_members()
@@ -492,35 +500,84 @@ def process_kill(result:str, details:object, store_in_db:bool):
         channel = bot.get_channel(CHANNEL_SC_PUBLIC)
         if success and channel:
             try:
+                # Regular kill announcement
                 asyncio.run_coroutine_threadsafe(
                     channel.send(f"**{bwc_name}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
                     bot.loop
                 )
-                now = datetime.utcnow().timestamp()
+
                 # Kill streaks
-                recent = [t for t in kill_history[discord_id] if now - t <= 120]
-                if len(recent) >= 5:
+                if g_kill_streaks[discord_id] == 50:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥 {bwc_name} is on a **5-kill streak!**"),
+                        channel.send(f"🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"),
                         bot.loop
                     )
-                elif len([t for t in kill_history[discord_id] if now - t <= 60]) >= 3:
+                elif g_kill_streaks[discord_id] == 20:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ {bwc_name} is on a **3-kill streak!**"),
+                        channel.send(f"🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"),
+                        bot.loop
+                    )
+                elif g_kill_streaks[discord_id] == 10:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"),
+                        bot.loop
+                    )
+                elif g_kill_streaks[discord_id] == 5:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"),
+                        bot.loop
+                    )
+                elif g_kill_streaks[discord_id] == 3:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"),
+                        bot.loop
+                    )
+
+                # Clean up any kills that are older than 60 seconds
+                now = datetime.utcnow().timestamp()
+                g_kill_timestamps[discord_id] = [t for t in g_kill_timestamps[discord_id] if now - t <= 60]
+
+                # Chain Multiple kills
+                if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ Killimanjaro! ⚡ **{bwc_name}**"),
+                        bot.loop
+                    )
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ Killtacular! ⚡ **{bwc_name}**"),
+                        bot.loop
+                    )
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ OverKill! ⚡ **{bwc_name}**"),
+                        bot.loop
+                    )
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ Triple Kill ⚡ **{bwc_name}**"),
+                        bot.loop
+                    )
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"⚡ Double Kill ⚡ **{bwc_name}**"),
                         bot.loop
                     )
 
                 # Milestones
-                if player_kills[discord_id] % 50 == 0:
+                total_kills = db_total_kills(discord_id)
+                if total_kills > 0 and total_kills % 50 == 0:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🏆 {bwc_name} reached **{player_kills[discord_id]} kills!**"),
+                        channel.send(f"🏆 {bwc_name} reached **{total_kills} kills!**"),
                         bot.loop
                     )
             except Exception as e:
                 logger.error(f"Unexpected error sending kill announcement: {e}")
     elif result == "killed":
+        g_kill_streaks[discord_id] = 0
         logger.info(f"Reporting killed player: {victim} with ship {current_ship} playing {game_mode}, killed by {player} with {weapon} in {zone}")
     elif result == "suicide":
+        g_kill_streaks[discord_id] = 0
         logger.info(f"Reporting suicide: {victim} with ship {current_ship} playing {game_mode}, died by {weapon} in {zone}")
     else:
         logger.warning(f"Unhandled kill result type: {result}")
