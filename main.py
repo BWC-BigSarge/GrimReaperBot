@@ -76,8 +76,8 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", description=description, intents=intents)
 
 # Track kills in memory
-kill_history = defaultdict(list)  # {player: [timestamps]}
-player_kills = defaultdict(int)   # {player: total kills}
+kill_history = defaultdict(list)  # {discord_id: [timestamps]}
+player_kills = defaultdict(int)   # {discord_id: total kills}
 
 # ---------------------------------------------------------------------------
 # Database Connection Pool
@@ -435,7 +435,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
     anonymize_state = details.get("anonymize_state")
     if(anonymize_state.get("enabled")):
         logger.info("Reporting anonymized kill")
-        discord_id = "N/A"
+        discord_id = "[BWC]"
         player = "[BWC]"
 
     weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
@@ -443,8 +443,8 @@ def process_kill(result:str, details:object, store_in_db:bool):
     success = True
     if result == "killer":
         # Record kill in memory
-        kill_history[player].append(kill_time.timestamp())
-        player_kills[player] += 1
+        kill_history[discord_id].append(kill_time.timestamp())
+        player_kills[discord_id] += 1
 
         # Record kill in database
         if store_in_db:
@@ -475,33 +475,45 @@ def process_kill(result:str, details:object, store_in_db:bool):
             logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
         # Announce kill in Discord
+
+        bwc_name = player
+        # Reassign bwc_name to how their name is formatted in Discord. Using discord_id, find their member object, and get their display name from it
+        member_list = bot.get_all_members()
+        member = None
+        for m in member_list:
+            if str(m.id) == discord_id:
+                member = m
+                break
+        if member:
+            bwc_name = member.display_name
+
         #zone_human_readable = convert_string(data_map.zonesMapping, zone, fuzzy_search=True)
         # game_mode == "SC_Default"
         channel = bot.get_channel(CHANNEL_SC_PUBLIC)
         if success and channel:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"**{player}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
+                    channel.send(f"**{bwc_name}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
                     bot.loop
                 )
                 now = datetime.utcnow().timestamp()
                 # Kill streaks
-                recent = [t for t in kill_history[player] if now - t <= 120]
+                recent = [t for t in kill_history[discord_id] if now - t <= 120]
                 if len(recent) >= 5:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥 {player} is on a **5-kill streak!**"),
+                        channel.send(f"🔥 {bwc_name} is on a **5-kill streak!**"),
                         bot.loop
                     )
-                elif len([t for t in kill_history[player] if now - t <= 60]) >= 3:
+                elif len([t for t in kill_history[discord_id] if now - t <= 60]) >= 3:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ {player} is on a **3-kill streak!**"),
+                        channel.send(f"⚡ {bwc_name} is on a **3-kill streak!**"),
                         bot.loop
                     )
 
                 # Milestones
-                if player_kills[player] % 50 == 0:
+                if player_kills[discord_id] % 50 == 0:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🏆 {player} reached **{player_kills[player]} kills!**"),
+                        channel.send(f"🏆 {bwc_name} reached **{player_kills[discord_id]} kills!**"),
                         bot.loop
                     )
             except Exception as e:
