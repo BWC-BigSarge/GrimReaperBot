@@ -42,6 +42,20 @@ CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678
 #CHANNEL_SC_PUBLIC = 480367983558918174
 #CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
 
+# ERROR CODES:
+ERRORCODE_Void = 469
+ERRORCODE_Expired = 470
+ERRORCODE_Revoked = 471
+ERRORCODE_Banned = 472
+
+# Status string identifiers for api_keys table
+STATUS_Active = "active" # This is hardcoded as the default value in the table schema
+STATUS_Expired = "expired"
+STATUS_Revoked = "revoked"
+STATUS_Banned = "banned"
+
+EXPIRATION_DURATION = timedelta(days=180) # API keys expire after 180 days
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -106,7 +120,8 @@ async def on_ready():
                     discord_id VARCHAR(24) PRIMARY KEY,
                     api_key VARCHAR(42) NOT NULL,
                     rsi_handle VARCHAR(42),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR(32) DEFAULT 'active'
                 )
                 """)
                 cursor.execute("""
@@ -156,20 +171,49 @@ async def weekly_tally():
     """Generate and post the weekly tally."""
     logger.info("Generating weekly tally...")
 
-    if not player_kills:
-        logger.info("No kills recorded yet. Skipping tally.")
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Get kills from the past week from the kill_feed table, by counting number of rows with discord_id and time_stamp column
+        cursor.execute("""
+            SELECT discord_id, COUNT(*) as kill_count
+            FROM kill_feed
+            WHERE time_stamp >= NOW() - INTERVAL 7 DAY
+            GROUP BY discord_id
+            """)
+        results = cursor.fetchall()
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in weekly_tally: {err}")
         return
+    except Exception as e:
+        logger.error(f"Unexpected error in weekly_tally: {e}")
+        return
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    sorted_kills = sorted(player_kills.items(), key=lambda x: x[1], reverse=True)
-    lines = [f"**Weekly Kill Tally** ({datetime.utcnow().strftime('%Y-%m-%d')}):"]
-    for player, count in sorted_kills:
-        lines.append(f"- {player}: {count} kills")
-
+    if not results:
+        logger.info("No kills recorded in the past week.")
+        return
+    # Sort results by kill_count descending
+    sorted_kills = sorted(results, key=lambda x: x[1], reverse=True)
+    # Post the message to the announcements channel
     channel = bot.get_channel(CHANNEL_SC_ANNOUNCEMENTS)
-    if channel:
-        await channel.send("\n".join(lines))
-    else:
-        logger.warning("Announcements channel not found!")
+    if not channel:
+        logger.error(f"Channel ID {CHANNEL_SC_ANNOUNCEMENTS} not found.")
+        return
+    # Format the message
+    message_lines = ["🏆 **Weekly Kill Tally** 🏆", "Here are the top killers from the past week:"]
+    for idx, (discord_id, kill_count) in enumerate(sorted_kills[:10], start=1):
+        message_lines.append(f"**{idx}. <@{discord_id}>** - {kill_count} kills")
+    message = "\n".join(message_lines)
+    try:
+        await channel.send(message)
+        logger.info("Weekly tally posted successfully.")
+    except Exception as e:
+        logger.error(f"Error posting weekly tally: {e}")
 
 
 # # Add job if it doesn’t exist
@@ -185,6 +229,128 @@ async def weekly_tally():
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+@bot.command(name="totalkills")
+async def total_kills(ctx):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        discord_id = str(ctx.author.id)
+        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
+        ret = cursor.fetchone()
+        if ret:
+            total = ret[0]
+            await ctx.send(f"✅ You have a total of {total} recorded kills.")
+        else:
+            await ctx.send("❌ Unable to retrieve your kill count.")
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in total_kills: {err}")
+        await ctx.send("❌ Database error occurred while retrieving your kill count.")
+    except Exception as e:
+        logger.error(f"Unexpected error in total_kills: {e}")
+        await ctx.send("❌ An unexpected error occurred while retrieving your kill count.")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+@bot.command(name="weeklytally")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def manual_weekly_tally(ctx):
+    """Manually trigger the weekly tally (Admin only)."""
+    await weekly_tally()
+    await ctx.send("✅ Weekly tally triggered manually.")
+
+@manual_weekly_tally.error
+async def weeklytally_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+def set_api_status(ctx, discord_id:str, new_status:str):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE api_keys SET status = %s WHERE discord_id = %s", (new_status, discord_id))
+        if cursor.rowcount == 0:
+            asyncio.run_coroutine_threadsafe(
+                ctx.send(f"❌ No API key found for Discord ID {discord_id}."),
+                bot.loop
+                )
+            logger.warning(f"ban_user: No API key found for Discord ID {discord_id}.")
+        else:
+            conn.commit()
+            if new_status == STATUS_Active:
+                asyncio.run_coroutine_threadsafe(
+                    ctx.send(f"✅ Discord ID {discord_id} has been activated and can now use the Kill Tracker."),
+                    bot.loop
+                    )
+            elif new_status == STATUS_Banned:
+                asyncio.run_coroutine_threadsafe(
+                    ctx.send(f"✅ Discord ID {discord_id} has been banned from using the Kill Tracker."),
+                    bot.loop
+                    )
+            elif new_status == STATUS_Revoked:
+                asyncio.run_coroutine_threadsafe(
+                    ctx.send(f"✅ Kill Tracker API key for Discord ID {discord_id} has been revoked."),
+                    bot.loop
+                    )
+            else:
+                asyncio.run_coroutine_threadsafe(
+                    ctx.send(f"✅ API key status for Discord ID {discord_id} set to '{new_status}'."),
+                    bot.loop
+                    )
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in ban_user: {err}")
+        asyncio.run_coroutine_threadsafe(
+            ctx.send(f"❌ Database error occurred while '{new_status}' the user."),
+            bot.loop
+            )
+    except Exception as e:
+        logger.error(f"Unexpected error in ban_user: {e}")
+        asyncio.run_coroutine_threadsafe(
+            ctx.send(f"❌ An unexpected error occurred while '{new_status}' the user."),
+            bot.loop
+            )
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@bot.command(name="kt_ban")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def ban_user(ctx, discord_id: str):
+    """Ban a user from using the API (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Banned)
+
+@ban_user.error
+async def ban_user_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+@bot.command(name="kt_activate")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def activate_user(ctx, discord_id: str):
+    """Unban/Activate a user from using the API (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Active)
+
+@activate_user.error
+async def activate_user_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+@bot.command(name="kt_revoke")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def revoke_key(ctx, discord_id: str):
+    """Revoke a user's API key (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Revoked)
+    
+@revoke_key.error
+async def revoke_key_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
 @bot.command()
 async def testkill(ctx, player:str):
     """Simulate recording a PvP kill (testing only)."""
@@ -201,19 +367,6 @@ async def testkill(ctx, player:str):
         'anonymize_state': {'enabled': False }
     }
     process_kill("killer", details, store_in_db=False)
-
-@bot.command(name="weeklytally")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def manual_weekly_tally(ctx):
-    """Manually trigger the weekly tally (Admin only)."""
-    await weekly_tally()
-    await ctx.send("✅ Weekly tally triggered manually.")
-
-
-@manual_weekly_tally.error
-async def weeklytally_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send("❌ You do not have permission to run this command.")
 
 # Sample JSON Payloads:
 # Current user killed themselves
@@ -403,60 +556,62 @@ def get_api_key():
         # Authenticate request
         data = request.json
         if not data or data.get("secret") != API_SHARED_SECRET:
-            return jsonify({"error": "Unauthorized"}), 403
-
+            return jsonify({"error": "Unauthorized"}), 401
         discord_id = data.get("discord_id")
         if not discord_id:
-            return jsonify({"error": "Missing discord_id"}), 400
+            return jsonify({"error": "Missing discord_id"}), ERRORCODE_Void
     except Exception as e:
         logger.error(f"Unexpected error in get_api_key: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
     logger.info(f"get_api_key called for discord_id: {discord_id}")
 
-    # Check if user already has an API key
-    success = False
-    api_key = None
     try:
+        api_key = None
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT api_key FROM api_keys WHERE discord_id = %s", (discord_id,))
+        cursor.execute("SELECT api_key, created_at, status FROM api_keys WHERE discord_id = %s", (discord_id,))
         ret = cursor.fetchone()
-        if ret:
-            api_key = ret[0]
-            logger.info("API key found")
-            logger.info(f"Existing API key for {discord_id} retrieved")
-        else:
-            logger.info("No API key found, generating new one")
+        api_key_found = False
+        if ret: # Check if user already has an API key
+            api_key, created_at, status = ret
+            if status == STATUS_Active:
+                if created_at < datetime.utcnow() - EXPIRATION_DURATION: # Check if key is expired
+                    logger.info(f"API key for {discord_id} has become expired, generating new key")
+                else:
+                    api_key_found = True
+                    logger.info(f"Existing API key for {discord_id} retrieved")
+            else:
+                logger.warning(f"API key {api_key} is void: {status}")
+                if status == STATUS_Banned:
+                    return jsonify({"error": "User Discord ID is banned"}), ERRORCODE_Banned
+        if not api_key_found:
+            logger.info("Generating new API Key...")
             api_key = secrets.token_hex(16)
-            logger.info(f"Generated API key: { api_key }")
             cursor.execute(
                 """
                 INSERT INTO api_keys (discord_id, api_key)
                 VALUES (%s, %s)
                 ON DUPLICATE KEY UPDATE api_key = VALUES(api_key),
-                                        created_at = CURRENT_TIMESTAMP
+                                        created_at = CURRENT_TIMESTAMP,
+                                        status = 'active'
                 """,
                 (discord_id, api_key),
             )
             conn.commit()
             logger.info(f"Generated new API key for {discord_id}")
-        success = True
+        return jsonify({"api_key": api_key}), 200
     except mysql.connector.Error as err:
         logger.error(f"Database error in get_api_key: {err}")
+        return jsonify({"error": "Database error"}), 500
     except Exception as e:
         logger.error(f"Unexpected error in get_api_key: {e}")
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-
-    if success:
-        return jsonify({"api_key": api_key}), 200
-    else:
-        return jsonify({"error": "Failed to get API key"}), 500
-
 
 # JSON Payload Example:
 # { "api_key": key,
@@ -468,46 +623,57 @@ def validate_key():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "Unauthorized"}), 403
-
+            return jsonify({"error": "Bad Request"}), 400
         api_key = data.get("api_key")
         player_name = data.get("player_name")
         if not api_key:
-            return jsonify({"error": "Missing api_key"}), 400
+            return jsonify({"error": "Missing api_key"}), ERRORCODE_Void
     except Exception as e:
         logger.error(f"Unexpected error in validate_key: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
     # Determine if API key exists, then update rsi_handle if needed
-    success = False
     try:
         dicord_id = None
         rsi_handle = None
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT discord_id, rsi_handle FROM api_keys WHERE api_key = %s", (api_key,))
+        cursor.execute("SELECT discord_id, rsi_handle, created_at, status FROM api_keys WHERE api_key = %s", (api_key,))
         ret = cursor.fetchone()
         if ret:
-            discord_id, rsi_handle = ret
+            discord_id, rsi_handle, created_at, status = ret
             if player_name and rsi_handle != player_name:
                 cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
                 conn.commit()
-            success = True
+            if status == STATUS_Active:
+                # Check if key is expired
+                if created_at < datetime.utcnow() - EXPIRATION_DURATION:
+                    logger.info(f"API key for {discord_id} has become expired")
+                    cursor.execute("UPDATE api_keys SET status = %s WHERE api_key = %s", (STATUS_Expired, api_key))
+                    conn.commit()
+                    return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
+                return jsonify({"success": True, "discord_id": discord_id}), 200
+            else:
+                logger.warning(f"API key {api_key} is void: {status}")
+                if status == STATUS_Banned:
+                    return jsonify({"error": "User Discord ID is banned"}), ERRORCODE_Banned
+                elif status == STATUS_Revoked:
+                    return jsonify({"error": "API key is revoked"}), ERRORCODE_Revoked
+                elif status == STATUS_Expired:
+                    return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
+                else:
+                    return jsonify({"error": "API key is void"}), ERRORCODE_Void
     except mysql.connector.Error as err:
         logger.error(f"Database error in validate_key: {err}")
+        return jsonify({"error": "Database error"}), 500
     except Exception as e:
         logger.error(f"Unexpected error in validate_key: {e}")
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-
-    if success:
-        return jsonify({"success": True, "discord_id": discord_id}), 200
-    else:
-        return jsonify({"error": "Invalid API key or internal server error"}), 403
-
 
 # JSON Payload Example:
 # { "api_key": key,
@@ -519,49 +685,58 @@ def get_expiration():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "Unauthorized"}), 403
-
+            return jsonify({"error": "Bad Request"}), 400
         api_key = data.get("api_key")
         player_name = data.get("player_name")
         if not api_key:
-            return jsonify({"error": "Missing api_key"}), 400
+            return jsonify({"error": "Missing api_key"}), ERRORCODE_Void
     except Exception as e:
         logger.error(f"Unexpected error in get_expiration: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
     # Determine if API key exists, then update rsi_handle if needed
     expiration_date = None
-    success = False
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT discord_id, rsi_handle, created_at FROM api_keys WHERE api_key = %s", (api_key,))
+        cursor.execute("SELECT discord_id, rsi_handle, created_at, status FROM api_keys WHERE api_key = %s", (api_key,))
         ret = cursor.fetchone()
         if ret:
-            discord_id, rsi_handle, created_at = ret
+            discord_id, rsi_handle, created_at, status = ret
             if player_name and rsi_handle != player_name:
                 cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
                 conn.commit()
-            expiration_date = created_at + timedelta(days=180)
+            if status == STATUS_Active:
+                # Check if key is expired
+                if created_at < datetime.utcnow() - EXPIRATION_DURATION:
+                    logger.info(f"API key for {discord_id} has become expired")
+                    cursor.execute("UPDATE api_keys SET status = %s WHERE api_key = %s", (STATUS_Expired, api_key))
+                    conn.commit()
+                    return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
+            elif status == STATUS_Banned:
+                return jsonify({"error": "User Discord ID is banned"}), ERRORCODE_Banned
+            elif status == STATUS_Revoked:
+                return jsonify({"error": "API key is revoked"}), ERRORCODE_Revoked
+            elif status == STATUS_Expired:
+                return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
+            else:
+                return jsonify({"error": "API key is void"}), ERRORCODE_Void
+            expiration_date = created_at + EXPIRATION_DURATION
             # Convert expiration_date to work with datetime.strptime()
             expiration_date = expiration_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-            success = True
+            logger.info(f"{player_name} pinged host")
+        return jsonify({"success": True, "expires_at": expiration_date}), 200
     except mysql.connector.Error as err:
         logger.error(f"Database error in get_expiration: {err}")
+        return jsonify({"error": "Database error"}), 500
     except Exception as e:
         logger.error(f"Unexpected error in get_expiration: {e}")
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-
-    if success:
-        logger.info(f"{player_name} pinged host")
-        return jsonify({"success": True, "expires_at": expiration_date}), 200
-    else:
-        return jsonify({"error": "get_expiration - Invalid API key or internal server error"}), 403
-
 
 # GET requests for various data maps
 @app.route("/data_map/weapons", methods=["GET"])
@@ -597,12 +772,49 @@ def get_data_map_ignoredVictimRules():
 @app.route("/reportKill", methods=["POST"])
 def report_kill():
     data = request.json
+    headers = request.headers
+    if not data or not headers:
+        return jsonify({"error": "Bad Request"}), 400
+    api_key = headers.get("Authorization")
+    if not api_key:
+        return jsonify({"error": "Missing api_key"}), ERRORCODE_Void
+
+    # Validate API key
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM api_keys WHERE api_key = %s", (api_key,))
+        ret = cursor.fetchone()
+        if ret:
+            status = ret[0]
+            if status == STATUS_Banned:
+                return jsonify({"error": "User Discord ID is banned"}), ERRORCODE_Banned
+            elif status == STATUS_Revoked:
+                return jsonify({"error": "API key is revoked"}), ERRORCODE_Revoked
+            elif status == STATUS_Expired:
+                return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
+            elif status != STATUS_Active:
+                return jsonify({"error": "API key is void"}), ERRORCODE_Void
+        else:
+            return jsonify({"error": "Invalid API key"}), ERRORCODE_Void
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in report_kill: {err}")
+        return jsonify({"error": "Database error"}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error in report_kill: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
     result = data.get("result")
     details = data.get("data", {})
-
     if process_kill(result, details, store_in_db=True):
         return jsonify({"success": True}), 200
     else:
+        logger.error("Failed to process kill")
         return jsonify({"error": "Failed to process kill"}), 500
 
 # ---------------------------------------------------------------------------
