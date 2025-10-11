@@ -72,6 +72,7 @@ logger = logging.getLogger("GrimReaperBot")
 intents = discord.Intents.default()
 intents.messages = True
 intents.guilds = True
+intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", description=description, intents=intents)
@@ -484,16 +485,33 @@ def process_kill(result:str, details:object, store_in_db:bool):
         # ------------------------------------------------------------------------------------------
         # Announce kill in Discord
         # ------------------------------------------------------------------------------------------
-        bwc_name = player
-        # Reassign bwc_name to how their name is formatted in Discord. Using discord_id, find their member object, and get their display name from it
-        member_list = bot.get_all_members()
-        member = None
-        for m in member_list:
-            if str(m.id) == discord_id:
-                member = m
-                break
-        if member:
-            bwc_name = member.display_name
+        bwc_name = None # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id
+        # First look through all guilds the bot is in to find the member
+        for guild in bot.guilds:
+           for member in guild.members:
+               if str(member.id) == discord_id:
+                   logger.info(f"Found Discord member in guild {guild.name}")
+                   bwc_name = member.display_name
+                   break
+        # If we can't find them in any guild, try fetching the user directly
+        if bwc_name == None:
+            discord_id_as_int = int(discord_id) if discord_id.isdigit() else None
+            if discord_id_as_int:
+                member = bot.get_user(discord_id_as_int)
+                if member:
+                    logger.info(f"Found cached Discord member: {member}")
+                    bwc_name = member.display_name
+                else:
+                    try:
+                        member = bot.fetch_user(discord_id_as_int)
+                        logger.info(f"Fetched Discord member: {member}")
+                        if member:
+                            bwc_name = member.display_name
+                    except Exception as e:
+                        logger.error(f"Error fetching Discord member: {e}")
+        if bwc_name == None:
+            bwc_name = player # Fallback to using their RSI name if we can't find their Discord name
+            logger.warning(f"Could not find Discord member for ID: {discord_id}, using RSI name: {bwc_name}")
 
         #zone_human_readable = convert_string(data_map.zonesMapping, zone, fuzzy_search=True)
         # game_mode == "SC_Default"
