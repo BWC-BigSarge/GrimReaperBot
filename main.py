@@ -751,6 +751,9 @@ def validate_key():
                     return jsonify({"error": "API key is expired"}), ERRORCODE_Expired
                 else:
                     return jsonify({"error": "API key is void"}), ERRORCODE_Void
+        else:
+            logger.warning(f"API key {api_key} not found in database")
+            return jsonify({"error": "API key not found in database"}), ERRORCODE_Void
     except mysql.connector.Error as err:
         logger.error(f"Database error in validate_key: {err}")
         return jsonify({"error": "Database error"}), 500
