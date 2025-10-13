@@ -743,7 +743,7 @@ def should_task_run(task_name:str, interval_days:int = 7):
             conn.commit()
             return True  # First run ever
 
-        last_run = row["last_run"]
+        last_run = row[0]
         delta = now - last_run
         if delta.days >= interval_days:
             logger.info(f"Scheduling task: {task_name} to run now (last run was {delta.days} days ago)")
