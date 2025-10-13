@@ -4,15 +4,13 @@ import os
 from time import sleep
 from dotenv import load_dotenv
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import mysql.connector
 from mysql.connector import pooling
 import logging
 import asyncio
 from datetime import datetime, timedelta
 from collections import defaultdict
-#from apscheduler.schedulers.asyncio import AsyncIOScheduler
-#from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from flask import Flask, request, jsonify
 from waitress import serve
 import threading
@@ -78,7 +76,7 @@ bot = commands.Bot(command_prefix="!", description=description, intents=intents)
 
 # Track kills in memory
 g_kill_timestamps = defaultdict(list)  # {discord_id: [timestamps]}
-g_kill_streaks = defaultdict(int)   # {discord_id: total kills}
+g_kill_streaks = defaultdict(int)      # {discord_id: total kills}
 
 # ---------------------------------------------------------------------------
 # Database Connection Pool
@@ -94,6 +92,11 @@ def get_connection():
 # ---------------------------------------------------------------------------
 # Bot Events
 # ---------------------------------------------------------------------------
+@tasks.loop(hours=1)
+async def hourly_task_check():
+    if should_task_run("weekly_kill_tally", 7):
+        await weekly_tally()
+
 @bot.event
 async def on_ready():
     global cnxpool
@@ -139,6 +142,12 @@ async def on_ready():
                     client_ver VARCHAR(10)
                 )
                 """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    task_name VARCHAR(64) PRIMARY KEY,
+                    last_run DATETIME NOT NULL
+                )
+                """)
             except mysql.connector.Error as err:
                 logger.error(f"Fatal Error creating tables: {err}")
                 return
@@ -156,8 +165,8 @@ async def on_ready():
     # Logger Setup
     logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
-    #if not scheduler.running:
-    #    scheduler.start()
+    if not hourly_task_check.is_running():
+        hourly_task_check.start()
 
 # ---------------------------------------------------------------------------
 # APScheduler Setup
@@ -662,7 +671,7 @@ def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> st
             else:
                 try:
                     future = asyncio.run_coroutine_threadsafe(bot.fetch_user(discord_id_as_int), bot.loop)
-                    member = future.result(timeout=5)
+                    member = future.result(timeout=3)
                     logger.info(f"Fetched Discord member: {member}")
                     if member:
                         bwc_name = member.display_name
@@ -718,6 +727,37 @@ def convert_string(data_map, src_string:str, fuzzy_search=bool) -> str:
     except Exception as e:
         print(f"Error in convert_string: {e}")
     return src_string
+
+def should_task_run(task_name:str, interval_days:int = 7):
+    """Return True if database scheduled task should run now."""
+    try:
+        now = datetime.utcnow()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT last_run FROM scheduled_tasks WHERE task_name = %s", (task_name,))
+        row = cursor.fetchone()
+        if not row:
+            logger.info(f"Scheduling first run of task: {task_name}")
+            cursor.execute("INSERT INTO scheduled_tasks (task_name, last_run) VALUES (%s, %s)", (task_name, now))
+            conn.commit()
+            return True  # First run ever
+
+        last_run = row["last_run"]
+        delta = now - last_run
+        if delta.days >= interval_days:
+            logger.info(f"Scheduling task: {task_name} to run now (last run was {delta.days} days ago)")
+            cursor.execute("UPDATE scheduled_tasks SET last_run = %s WHERE task_name = %s", (now, task_name))
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error in should_task_run for {task_name}: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+    return False
 
 # ---------------------------------------------------------------------------
 # API Server for Website Requests
