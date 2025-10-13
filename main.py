@@ -35,13 +35,12 @@ description = """
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
-ADMIN_ROLE_NAME = os.getenv("ADMIN_ROLE_NAME", 480372823454384138) # Default is "NBR NCO" id number - this role allows manual_weekly_tally
+ADMIN_ROLE_NAME = 1427357824597360671 #os.getenv("ADMIN_ROLE_NAME", 480372823454384138) # Default is "NBR NCO" id number - this role allows manual_weekly_tally
 
-# NOTE: These channel IDs currently point to my test server (Game_Overture)
-CHANNEL_SC_PUBLIC = 1420804944075689994
-CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678
-#CHANNEL_SC_PUBLIC = 480367983558918174
-#CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
+CHANNEL_SC_PUBLIC = 1420804944075689994 # Test server (Game_Overture)
+CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678 # Test server (Game_Overture)
+#CHANNEL_SC_PUBLIC = 480367983558918174 # BWC server
+#CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957 # BWC server
 
 # ERROR CODES:
 ERRORCODE_Void = 469
@@ -174,16 +173,29 @@ async def weekly_tally():
     logger.info("Generating weekly tally...")
 
     try:
+        # Post the message to the announcements channel
+        channel = bot.get_channel(CHANNEL_SC_ANNOUNCEMENTS)
+        if not channel:
+            logger.error(f"Announcements Channel (ID: {CHANNEL_SC_ANNOUNCEMENTS}) not found.")
+            return
+
         conn = get_connection()
         cursor = conn.cursor()
         # Get kills from the past week from the kill_feed table, by counting number of rows with discord_id and time_stamp column
         cursor.execute("""
-            SELECT discord_id, COUNT(*) as kill_count
+            SELECT discord_id, COUNT(*) as kill_count_pu
             FROM kill_feed
-            WHERE time_stamp >= NOW() - INTERVAL 7 DAY
+            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]' AND game_mode = 'SC_Default'
             GROUP BY discord_id
             """)
-        results = cursor.fetchall()
+        results_PU = cursor.fetchall() # List of tuples (discord_id, kill_count)
+        cursor.execute("""
+            SELECT discord_id, COUNT(*) as kill_count_ac
+            FROM kill_feed
+            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]' AND game_mode != 'SC_Default'
+            GROUP BY discord_id
+            """)
+        results_AC = cursor.fetchall() # List of tuples (discord_id, kill_count)
     except mysql.connector.Error as err:
         logger.error(f"Database error in weekly_tally: {err}")
         return
@@ -196,23 +208,56 @@ async def weekly_tally():
         if conn:
             conn.close()
 
-    if not results:
-        logger.info("No kills recorded in the past week.")
-        return
-    # Sort results by kill_count descending
-    sorted_kills = sorted(results, key=lambda x: x[1], reverse=True)
-    # Post the message to the announcements channel
-    channel = bot.get_channel(CHANNEL_SC_ANNOUNCEMENTS)
-    if not channel:
-        logger.error(f"Channel ID {CHANNEL_SC_ANNOUNCEMENTS} not found.")
-        return
-    # Format the message with two columns
-    message_lines = ["🏆 **Weekly Kill Tally** 🏆", "Here are the top killers from the past week:"]
-    for idx, (discord_id, kill_count) in enumerate(sorted_kills[:10], start=1):
-        message_lines.append(f"**{idx}. <@{discord_id}>** - {kill_count} kills")
-    message = "\n".join(message_lines)
+    if not results_PU:
+        logger.info("No PU kills recorded in the past week.")
+    if not results_AC:
+        logger.info("No AC kills recorded in the past week.")
+    logger.info(f"Weekly tally results PU: {results_PU}")
+    logger.info(f"Weekly tally results AC: {results_AC}")
+
+    results_PU = sorted(results_PU, key=lambda x: x[1], reverse=True) # Sort PU results by kill_count descending
+    results_AC = sorted(results_AC, key=lambda x: x[1], reverse=True) # Sort AC results by kill_count descending
+
+    # Create an embed message with the top 10 killers for both PU and AC, each in their own section
+    embed_desc = "Top 10 BWC members with most kills in the PU and AC for the week of **" + (datetime.utcnow() - timedelta(days=7)).strftime("%m-%d") + "**\n\u3164"
+    embed_var = discord.Embed(title="Weekly Kill Tally", color=0xff0000, description=embed_desc, timestamp=datetime.utcnow())
+    embed_var.set_author(name="GrimReaperBot", icon_url="https://media.discordapp.net/attachments/1079475596314280066/1427308241796333691/5ae5886122e57b7510cc31a69b9b2dca.png?ex=68ee63e2&is=68ed1262&hm=fb4fd804a994eb6ec1d7c6b62bb55a877441934ae273e2f05816a51be9ff2e51&=&format=webp&quality=lossless")
+    #embed_var.set_image(url="")
+    embed_var.set_footer(text="[BWC] Kill Tracker")
+    if results_PU:
+        pu_description = ""
+        rank = 1
+        for discord_id, kill_count in results_PU[:10]: # Top 10 PU killers
+            bwc_name = get_bwc_name(discord_id, True)
+            pu_description += f"**{rank}.** {bwc_name} "
+            if rank == 1:
+                pu_description += "🥇"
+            elif rank == 2:
+                pu_description += "🥈"
+            elif rank == 3:
+                pu_description += "🥉"
+            pu_description += f"\n> {kill_count} kills\n"
+            rank += 1
+        pu_description += "\u3164"
+        embed_var.add_field(name="🚀 Persistent Universe", value=pu_description, inline=True)
+    if results_AC:
+        ac_description = ""
+        rank = 1
+        for discord_id, kill_count in results_AC[:10]: # Top 10 AC killers
+            bwc_name = get_bwc_name(discord_id, True)
+            ac_description += f"**{rank}.** {bwc_name} "
+            if rank == 1:
+                ac_description += "🥇"
+            elif rank == 2:
+                ac_description += "🥈"
+            elif rank == 3:
+                ac_description += "🥉"
+            ac_description += f"\n> {kill_count} kills\n"
+            rank += 1
+        ac_description += "\u3164"
+        embed_var.add_field(name="🕹 Arena Commander", value=ac_description, inline=True)
     try:
-        await channel.send(message)
+        await channel.send(embed=embed_var)
         logger.info("Weekly tally posted successfully.")
     except Exception as e:
         logger.error(f"Error posting weekly tally: {e}")
@@ -252,16 +297,18 @@ def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
-@bot.command(name="totalkills")
-async def total_kills(ctx):
-    total_kills = db_total_kills(str(ctx.author.id))
+@bot.command(name="grimreaper_totalkills")
+async def total_kills(ctx, discord_id:str):
+    if discord_id == "":
+        discord_id = str(ctx.author.id)
+    total_kills = db_total_kills(discord_id)
     if total_kills >= 0:
         await ctx.send(f"✅ You have a total of {total_kills} recorded kills.")
     else:
         await ctx.send("❌ Unable to retrieve your kill count.")
 
-@bot.command(name="weeklytally")
-#@commands.has_role(ADMIN_ROLE_NAME)
+@bot.command(name="grimreaper_weeklytally")
+@commands.has_role(ADMIN_ROLE_NAME)
 async def manual_weekly_tally(ctx):
     """Manually trigger the weekly tally (Admin only)."""
     await weekly_tally()
@@ -287,22 +334,22 @@ def set_api_status(ctx, discord_id:str, new_status:str):
             conn.commit()
             if new_status == STATUS_Active:
                 asyncio.run_coroutine_threadsafe(
-                    ctx.send(f"✅ Discord ID {discord_id} has been activated and can now use the Kill Tracker."),
+                    ctx.send(f"✅ Discord ID <@{discord_id}> has been activated and can now use the Kill Tracker."),
                     bot.loop
                     )
             elif new_status == STATUS_Banned:
                 asyncio.run_coroutine_threadsafe(
-                    ctx.send(f"✅ Discord ID {discord_id} has been banned from using the Kill Tracker."),
+                    ctx.send(f"✅ Discord ID <@{discord_id}> has been banned from using the Kill Tracker."),
                     bot.loop
                     )
             elif new_status == STATUS_Revoked:
                 asyncio.run_coroutine_threadsafe(
-                    ctx.send(f"✅ Kill Tracker API key for Discord ID {discord_id} has been revoked."),
+                    ctx.send(f"✅ Kill Tracker API key for Discord ID <@{discord_id}> has been revoked."),
                     bot.loop
                     )
             else:
                 asyncio.run_coroutine_threadsafe(
-                    ctx.send(f"✅ API key status for Discord ID {discord_id} set to '{new_status}'."),
+                    ctx.send(f"✅ API key status for Discord ID <@{discord_id}> set to '{new_status}'."),
                     bot.loop
                     )
     except mysql.connector.Error as err:
@@ -324,7 +371,7 @@ def set_api_status(ctx, discord_id:str, new_status:str):
             conn.close()
 
 
-@bot.command(name="kt_ban")
+@bot.command(name="grimreaper_ban")
 @commands.has_role(ADMIN_ROLE_NAME)
 async def ban_user(ctx, discord_id: str):
     """Ban a user from using the API (Admin only)."""
@@ -335,7 +382,7 @@ async def ban_user_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
-@bot.command(name="kt_activate")
+@bot.command(name="grimreaper_activate")
 @commands.has_role(ADMIN_ROLE_NAME)
 async def activate_user(ctx, discord_id: str):
     """Unban/Activate a user from using the API (Admin only)."""
@@ -346,7 +393,7 @@ async def activate_user_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
-@bot.command(name="kt_revoke")
+@bot.command(name="grimreaper_revoke")
 @commands.has_role(ADMIN_ROLE_NAME)
 async def revoke_key(ctx, discord_id: str):
     """Revoke a user's API key (Admin only)."""
@@ -485,34 +532,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
         # ------------------------------------------------------------------------------------------
         # Announce kill in Discord
         # ------------------------------------------------------------------------------------------
-        bwc_name = None # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id
-        # First look through all guilds the bot is in to find the member
-        for guild in bot.guilds:
-           for member in guild.members:
-               if str(member.id) == discord_id:
-                   logger.info(f"Found Discord member in guild {guild.name}")
-                   bwc_name = member.display_name
-                   break
-        # If we can't find them in any guild, try fetching the user directly
-        if bwc_name == None:
-            discord_id_as_int = int(discord_id) if discord_id.isdigit() else None
-            if discord_id_as_int:
-                member = bot.get_user(discord_id_as_int)
-                if member:
-                    logger.info(f"Found cached Discord member: {member}")
-                    bwc_name = member.display_name
-                else:
-                    try:
-                        future = asyncio.run_coroutine_threadsafe(bot.fetch_user(discord_id_as_int), bot.loop)
-                        member = future.result(timeout=5)
-                        logger.info(f"Fetched Discord member: {member}")
-                        if member:
-                            bwc_name = member.display_name
-                    except Exception as e:
-                        logger.error(f"Error fetching Discord member: {e}")
-        if bwc_name == None:
-            bwc_name = player # Fallback to using their RSI name if we can't find their Discord name
-            logger.warning(f"Could not find Discord member for ID: {discord_id}, using RSI name: {bwc_name}")
+        bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
 
         #zone_human_readable = convert_string(data_map.zonesMapping, zone, fuzzy_search=True)
         # game_mode == "SC_Default"
@@ -602,6 +622,60 @@ def process_kill(result:str, details:object, store_in_db:bool):
         logger.warning(f"Unhandled kill result type: {result}")
         success = False
     return success
+
+def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> str:
+    """ Reassign bwc_name to how their name is formatted in Discord. Using their discord_id """
+    if ping_user:
+        bwc_name = f"<@{discord_id}>"
+        return bwc_name
+
+    bwc_name = None
+    # First look through all guilds the bot is in to find the member
+    for guild in bot.guilds:
+        for member in guild.members:
+            if str(member.id) == discord_id:
+                logger.info(f"Found Discord member in guild {guild.name}")
+                bwc_name = member.display_name
+                break
+    # If we can't find them in any guild, try fetching the user directly
+    if bwc_name == None:
+        discord_id_as_int = int(discord_id) if discord_id.isdigit() else None
+        if discord_id_as_int:
+            member = bot.get_user(discord_id_as_int)
+            if member:
+                logger.info(f"Found cached Discord member: {member}")
+                bwc_name = member.display_name
+            else:
+                try:
+                    future = asyncio.run_coroutine_threadsafe(bot.fetch_user(discord_id_as_int), bot.loop)
+                    member = future.result(timeout=5)
+                    logger.info(f"Fetched Discord member: {member}")
+                    if member:
+                        bwc_name = member.display_name
+                except Exception as e:
+                    logger.error(f"Error fetching Discord member: {e}")
+    if bwc_name == None:
+        logger.warning(f"Could not find Discord member for ID: {discord_id}, using fallback name: {fallback_name}")
+        bwc_name = fallback_name
+    if bwc_name == "Unknown":
+        logger.info(f"Final Attempt to fetch RSI handle for Discord ID: {discord_id} from database")
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT rsi_handle FROM api_keys WHERE discord_id = %s", (discord_id,))
+            ret = cursor.fetchone()
+            if ret and ret[0]:
+                bwc_name = ret[0]
+        except mysql.connector.Error as err:
+            logger.error(f"Database error in weekly_tally fetching rsi_handle: {err}")
+        except Exception as e:
+            logger.error(f"Unexpected error in weekly_tally fetching rsi_handle: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+    return bwc_name
 
 # NOTE: This is a synomous function used in BlackWidowCompanyKilltracker (LogParser class) - Changes or enhancements should be mirrored to it
 def convert_string(data_map, src_string:str, fuzzy_search=bool) -> str:
