@@ -298,14 +298,21 @@ def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills
 # Commands
 # ---------------------------------------------------------------------------
 @bot.command(name="grimreaper_totalkills")
-async def total_kills(ctx, discord_id:str):
+async def total_kills(ctx, discord_id:str=""):
     if discord_id == "":
         discord_id = str(ctx.author.id)
     total_kills = db_total_kills(discord_id)
+    bwc_name = get_bwc_name(discord_id, False)
     if total_kills >= 0:
-        await ctx.send(f"✅ You have a total of {total_kills} recorded kills.")
+        await ctx.send(f"✅ {bwc_name} has a total of {total_kills} recorded kills.")
     else:
         await ctx.send("❌ Unable to retrieve your kill count.")
+
+@total_kills.error
+async def total_kills_error(ctx, error):
+    await ctx.send("❌ An error occurred while processing your request.")
+
+# ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_weeklytally")
 @commands.has_role(ADMIN_ROLE_NAME)
@@ -318,6 +325,64 @@ async def manual_weekly_tally(ctx):
 async def weeklytally_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
+
+@bot.command(name="grimreaper_ban")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def ban_user(ctx, discord_id: str):
+    """Ban a user from using the API (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Banned)
+
+@ban_user.error
+async def ban_user_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
+
+@bot.command(name="grimreaper_activate")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def activate_user(ctx, discord_id: str):
+    """Unban/Activate a user from using the API (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Active)
+
+@activate_user.error
+async def activate_user_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
+
+@bot.command(name="grimreaper_revoke")
+@commands.has_role(ADMIN_ROLE_NAME)
+async def revoke_key(ctx, discord_id: str):
+    """Revoke a user's API key (Admin only)."""
+    set_api_status(ctx, discord_id, STATUS_Revoked)
+    
+@revoke_key.error
+async def revoke_key_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
+
+@bot.command()
+async def testkill(ctx, player:str):
+    """Simulate recording a PvP kill (testing only)."""
+    details = {
+        'discord_id': str(ctx.author.id),
+        'player': "Test_RSI_Name",
+        'victim': player,
+        'time': "<2025-10-02T22:57:03.975Z>",
+        'zone': "Test_Zone",
+        'weapon': "Test_Weapon",
+        'game_mode': "Test_Mode",
+        'current_ship': "Test_Ship",
+        'client_ver': "N/A",
+        'anonymize_state': {'enabled': False }
+    }
+    process_kill("killer", details, store_in_db=False)
 
 def set_api_status(ctx, discord_id:str, new_status:str):
     try:
@@ -369,57 +434,6 @@ def set_api_status(ctx, discord_id:str, new_status:str):
             cursor.close()
         if conn:
             conn.close()
-
-
-@bot.command(name="grimreaper_ban")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def ban_user(ctx, discord_id: str):
-    """Ban a user from using the API (Admin only)."""
-    set_api_status(ctx, discord_id, STATUS_Banned)
-
-@ban_user.error
-async def ban_user_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send("❌ You do not have permission to run this command.")
-
-@bot.command(name="grimreaper_activate")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def activate_user(ctx, discord_id: str):
-    """Unban/Activate a user from using the API (Admin only)."""
-    set_api_status(ctx, discord_id, STATUS_Active)
-
-@activate_user.error
-async def activate_user_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send("❌ You do not have permission to run this command.")
-
-@bot.command(name="grimreaper_revoke")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def revoke_key(ctx, discord_id: str):
-    """Revoke a user's API key (Admin only)."""
-    set_api_status(ctx, discord_id, STATUS_Revoked)
-    
-@revoke_key.error
-async def revoke_key_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send("❌ You do not have permission to run this command.")
-
-@bot.command()
-async def testkill(ctx, player:str):
-    """Simulate recording a PvP kill (testing only)."""
-    details = {
-        'discord_id': str(ctx.author.id),
-        'player': "Test_RSI_Name",
-        'victim': player,
-        'time': "<2025-10-02T22:57:03.975Z>",
-        'zone': "Test_Zone",
-        'weapon': "Test_Weapon",
-        'game_mode': "Test_Mode",
-        'current_ship': "Test_Ship",
-        'client_ver': "N/A",
-        'anonymize_state': {'enabled': False }
-    }
-    process_kill("killer", details, store_in_db=False)
 
 # Sample JSON Payloads:
 # Current user killed themselves
