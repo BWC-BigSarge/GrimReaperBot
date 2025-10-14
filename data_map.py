@@ -449,5 +449,5 @@ ignoredVictimRules = [
     { "type": "startsWith", "value": "quasigrazer" },
     { "type": "startsWith", "value": "shipjacker" },
     { "type": "startsWith", "value": "argo_atls" },
-    { "type": "regex",      "value": "^vlk(?!_apex_)" }
+    { "type": "regex",      "value": r"^(?=.*vlk_)(?!.*_apex_)" }
 ]

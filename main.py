@@ -33,7 +33,8 @@ description = """
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
-ADMIN_ROLE_NAME = 1427357824597360671 #os.getenv("ADMIN_ROLE_NAME", 480372823454384138) # Default is "NBR NCO" id number - this role allows manual_weekly_tally
+ROLE_GrimReaperAdmin = 1427357824597360671 #os.getenv("ADMIN_ROLE_NAME", 480372823454384138)
+ROLE_BWC = 480372977452580874
 
 CHANNEL_SC_PUBLIC = 1420804944075689994 # Test server (Game_Overture)
 CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678 # Test server (Game_Overture)
@@ -307,7 +308,8 @@ def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills
 # Commands
 # ---------------------------------------------------------------------------
 @bot.command(name="grimreaper_totalkills")
-async def total_kills(ctx, discord_id:str=""):
+@commands.has_role(ROLE_BWC)
+async def cmd_total_kills(ctx, discord_id:str=""):
     if discord_id == "":
         discord_id = str(ctx.author.id)
     total_kills = db_total_kills(discord_id)
@@ -317,72 +319,75 @@ async def total_kills(ctx, discord_id:str=""):
     else:
         await ctx.send("❌ Unable to retrieve your kill count.")
 
-@total_kills.error
-async def total_kills_error(ctx, error):
+@cmd_total_kills.error
+async def cmd_total_kills_error(ctx, error):
     await ctx.send("❌ An error occurred while processing your request.")
 
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_weeklytally")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def manual_weekly_tally(ctx):
+@commands.has_role(ROLE_GrimReaperAdmin)
+async def cmd_weekly_tally(ctx):
     """Manually trigger the weekly tally (Admin only)."""
     await weekly_tally()
     await ctx.send("✅ Weekly tally triggered manually.")
 
-@manual_weekly_tally.error
-async def weeklytally_error(ctx, error):
+@cmd_weekly_tally.error
+async def cmd_weekly_tally_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_ban")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def ban_user(ctx, discord_id: str):
+@commands.has_role(ROLE_GrimReaperAdmin)
+async def cmd_ban_user(ctx, discord_id: str):
     """Ban a user from using the API (Admin only)."""
     set_api_status(ctx, discord_id, STATUS_Banned)
 
-@ban_user.error
-async def ban_user_error(ctx, error):
+@cmd_ban_user.error
+async def cmd_ban_user_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_activate")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def activate_user(ctx, discord_id: str):
+@commands.has_role(ROLE_GrimReaperAdmin)
+async def cmd_activate_user(ctx, discord_id: str):
     """Unban/Activate a user from using the API (Admin only)."""
     set_api_status(ctx, discord_id, STATUS_Active)
 
-@activate_user.error
-async def activate_user_error(ctx, error):
+@cmd_activate_user.error
+async def cmd_activate_user_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_revoke")
-@commands.has_role(ADMIN_ROLE_NAME)
-async def revoke_key(ctx, discord_id: str):
+@commands.has_role(ROLE_GrimReaperAdmin)
+async def cmd_revoke_key(ctx, discord_id: str):
     """Revoke a user's API key (Admin only)."""
     set_api_status(ctx, discord_id, STATUS_Revoked)
     
-@revoke_key.error
-async def revoke_key_error(ctx, error):
+@cmd_revoke_key.error
+async def cmd_revoke_key_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
 # ---------------------------------------------------------------------------
 
-@bot.command()
-async def testkill(ctx, player:str):
+@bot.command(name="grimreaper_testkill")
+@commands.has_role(ROLE_BWC)
+async def cmd_test_kill(ctx, victim:str=""):
     """Simulate recording a PvP kill (testing only)."""
+    if victim == "":
+        victim = "Test_Victim"
     details = {
         'discord_id': str(ctx.author.id),
         'player': "Test_RSI_Name",
-        'victim': player,
+        'victim': victim,
         'time': "<2025-10-02T22:57:03.975Z>",
         'zone': "Test_Zone",
         'weapon': "Test_Weapon",
@@ -392,6 +397,13 @@ async def testkill(ctx, player:str):
         'anonymize_state': {'enabled': False }
     }
     process_kill("killer", details, store_in_db=False)
+
+@cmd_test_kill.error
+async def cmd_test_kill_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
 
 def set_api_status(ctx, discord_id:str, new_status:str):
     try:
