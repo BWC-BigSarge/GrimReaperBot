@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import discord
 from discord.ext import commands, tasks
 import mysql.connector
-from mysql.connector import pooling
+from mysql.connector import pooling, errors
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -33,13 +33,13 @@ description = """
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
-ROLE_GrimReaperAdmin = 1427357824597360671 #os.getenv("ADMIN_ROLE_NAME", 480372823454384138)
-ROLE_BWC = 480372977452580874
 
-CHANNEL_SC_PUBLIC = 1420804944075689994 # Test server (Game_Overture)
-CHANNEL_SC_ANNOUNCEMENTS = 1421936341486145678 # Test server (Game_Overture)
-#CHANNEL_SC_PUBLIC = 480367983558918174 # BWC server
-#CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957 # BWC server
+ROLE_GrimReaperAdmin = 1427357824597360671
+ROLE_BWC = 480372977452580874
+ROLE_SC = 480372006806618114
+
+CHANNEL_SC_PUBLIC = 480367983558918174 # BWC server
+CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957 # BWC server
 
 # ERROR CODES:
 ERRORCODE_Void = 469
@@ -48,7 +48,7 @@ ERRORCODE_Revoked = 471
 ERRORCODE_Banned = 472
 
 # Status string identifiers for api_keys table
-STATUS_Active = "active" # This is hardcoded as the default value in the table schema
+STATUS_Active = "active" # NOTE: 'active' is hardcoded as the default value in the table schema
 STATUS_Expired = "expired"
 STATUS_Revoked = "revoked"
 STATUS_Banned = "banned"
@@ -88,13 +88,46 @@ def get_connection():
     global cnxpool
     if cnxpool is None:
         raise RuntimeError("Database connection pool not initialized yet")
-    return cnxpool.get_connection()
+    try:
+        conn = cnxpool.get_connection()
+        conn.ping(reconnect=True, attempts=3, delay=5)
+        return conn
+    except errors.InterfaceError as e:
+        logger.error(f"InterfaceError Exception - Database connection pool might be dead, rebuilding it. Error was: {e}")
+        init_cnxpool()
+        return cnxpool.get_connection()
+    except errors.OperationalError as e:
+        logger.error(f"OperationalError Exception - Database connection pool might be dead, rebuilding it. Error was: {e}")
+        init_cnxpool()
+        return cnxpool.get_connection()
+    except Exception as e:
+        logger.error(f"Exception - Database connection pool might be dead, rebuilding it. Error was: {e}")
+        init_cnxpool()
+        return cnxpool.get_connection()
 
+def init_cnxpool():
+    global cnxpool
+    dbconfig = {
+            "host": os.getenv("DB_HOST"),
+            "port": int(os.getenv("DB_PORT")),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_DATABASE")
+        }
+    cnxpool = pooling.MySQLConnectionPool(pool_name="grim_db_pool",
+                                          pool_size=8,
+                                          **dbconfig)
+    logger.info("Database connection pool established")
 # ---------------------------------------------------------------------------
 # Bot Events
 # ---------------------------------------------------------------------------
 @tasks.loop(hours=1)
 async def hourly_task_check():
+    global cnxpool
+    if not cnxpool:
+        logger.warning("hourly_task_check: Database connection pool not initialized yet")
+        return
+
     if should_task_run("weekly_kill_tally", 7):
         await weekly_tally()
 
@@ -104,18 +137,7 @@ async def on_ready():
 
     # Database Setup
     try:
-        dbconfig = {
-            "host": os.getenv("DB_HOST"),
-            "port": int(os.getenv("DB_PORT")),
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-            "database": os.getenv("DB_DATABASE")
-        }
-        cnxpool = pooling.MySQLConnectionPool(pool_name="mypool",
-                                              pool_size=8,
-                                              **dbconfig)
-        logger.info("Database connection pool established")
-        
+        init_cnxpool()
         conn = get_connection()
         try:
             cursor = conn.cursor()
@@ -309,6 +331,7 @@ def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills
 # ---------------------------------------------------------------------------
 @bot.command(name="grimreaper_totalkills")
 @commands.has_role(ROLE_BWC)
+@commands.has_role(ROLE_SC)
 async def cmd_total_kills(ctx, discord_id:str=""):
     if discord_id == "":
         discord_id = str(ctx.author.id)
@@ -379,7 +402,7 @@ async def cmd_revoke_key_error(ctx, error):
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_testkill")
-@commands.has_role(ROLE_BWC)
+@commands.has_role(ROLE_GrimReaperAdmin)
 async def cmd_test_kill(ctx, victim:str=""):
     """Simulate recording a PvP kill (testing only)."""
     if victim == "":
