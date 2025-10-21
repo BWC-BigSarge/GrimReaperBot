@@ -197,7 +197,10 @@ weaponMapping = {
     "HRST_Storm_LaserRepeater_S3": "Pee Shooter",
     # Special Weapons
     "apar_special_ballistic_01": "Railgun",
-    "apar_special_ballistic_02": "Animus Missile Launcher"
+    "apar_special_ballistic_02": "Animus Missile Launcher",
+    # Grey's Market
+    "none_rifle_multi_01": "Killshot 'AK' Rifle",
+    "none_lmg_ballistic_01": "Pulverizer LMG"
 }
 
 zonesMapping = {

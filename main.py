@@ -29,7 +29,7 @@ description = """
      Developed by Game_Overture
          (https://robertsspaceindustries.com/citizens/Game_Overture)
      Original concept BWC-Firefly
-         (https://robertsspaceindustries.com/en/citizens/BWC-Firefly)
+         (https://robertsspaceindustries.com/citizens/BWC-Firefly)
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
@@ -37,6 +37,7 @@ API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API reque
 ROLE_GrimReaperAdmin = 1429598849173032990
 ROLE_BWC = 480372977452580874
 ROLE_SC = 480372006806618114
+ROLE_TEST_ADMIN = 1427357824597360671
 
 CHANNEL_SC_PUBLIC = 480367983558918174
 CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
@@ -409,7 +410,7 @@ async def cmd_revoke_key_error(ctx, error):
 # ---------------------------------------------------------------------------
 
 @bot.command(name="grimreaper_testkill")
-@commands.has_role(ROLE_GrimReaperAdmin)
+@commands.has_role(ROLE_TEST_ADMIN)
 async def cmd_test_kill(ctx, victim:str=""):
     """Simulate recording a PvP kill (testing only)."""
     if victim == "":
@@ -606,35 +607,36 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
 
                 # Regular kill announcement
+                victim_link = f"[{victim}](https://robertsspaceindustries.com/citizens/{victim})"
                 asyncio.run_coroutine_threadsafe(
-                    channel.send(f"**{bwc_name}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
+                    channel.send(f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"),
                     bot.loop
                 )
 
                 # Kill streaks
                 if g_kill_streaks[discord_id] == 50:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"),
+                        channel.send(f"> 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"),
                         bot.loop
                     )
                 elif g_kill_streaks[discord_id] == 20:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"),
+                        channel.send(f"> 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"),
                         bot.loop
                     )
                 elif g_kill_streaks[discord_id] == 10:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"),
+                        channel.send(f"> 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"),
                         bot.loop
                     )
                 elif g_kill_streaks[discord_id] == 5:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"),
+                        channel.send(f"> 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"),
                         bot.loop
                     )
                 elif g_kill_streaks[discord_id] == 3:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"),
+                        channel.send(f"> 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"),
                         bot.loop
                     )
 
@@ -645,27 +647,27 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 # Chain Multiple kills
                 if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ Killimanjaro! ⚡ **{bwc_name}**"),
+                        channel.send(f"> ⚡ Killimanjaro! ⚡ **{bwc_name}**"),
                         bot.loop
                     )
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ Killtacular! ⚡ **{bwc_name}**"),
+                        channel.send(f"> ⚡ Killtacular! ⚡ **{bwc_name}**"),
                         bot.loop
                     )
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ OverKill! ⚡ **{bwc_name}**"),
+                        channel.send(f"> ⚡ OverKill! ⚡ **{bwc_name}**"),
                         bot.loop
                     )
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ Triple Kill ⚡ **{bwc_name}**"),
+                        channel.send(f"> ⚡ Triple Kill ⚡ **{bwc_name}**"),
                         bot.loop
                     )
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"⚡ Double Kill ⚡ **{bwc_name}**"),
+                        channel.send(f"> ⚡ Double Kill ⚡ **{bwc_name}**"),
                         bot.loop
                     )
 
@@ -673,7 +675,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 total_kills = db_total_kills(discord_id)
                 if total_kills > 0 and total_kills % 50 == 0:
                     asyncio.run_coroutine_threadsafe(
-                        channel.send(f"🏆 {bwc_name} reached **{total_kills} kills!**"),
+                        channel.send(f"> 🏆 {bwc_name} reached **{total_kills} kills!**"),
                         bot.loop
                     )
             except Exception as e:
