@@ -34,12 +34,13 @@ description = """
 """
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET") # Shared secret for API requests from the BWC website
 
-ROLE_GrimReaperAdmin = 1427357824597360671
+ROLE_GrimReaperAdmin = 1429598849173032990
 ROLE_BWC = 480372977452580874
 ROLE_SC = 480372006806618114
 
-CHANNEL_SC_PUBLIC = 480367983558918174 # BWC server
-CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957 # BWC server
+CHANNEL_SC_PUBLIC = 480367983558918174
+CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
+CHANNEL_TEST_SERVER_PUBLIC = 1420804944075689994
 
 # ERROR CODES:
 ERRORCODE_Void = 469
@@ -123,13 +124,19 @@ def init_cnxpool():
 # ---------------------------------------------------------------------------
 @tasks.loop(hours=1)
 async def hourly_task_check():
+    logger.info("TASK LOOP - hourly_task_check() invoked")
+    await asyncio.to_thread(run_db_check)
+
+def run_db_check():
     global cnxpool
     if not cnxpool:
         logger.warning("hourly_task_check: Database connection pool not initialized yet")
         return
 
+    logger.info("TASK LOOP - before should_task_run() invoked")
     if should_task_run("weekly_kill_tally", 7):
-        await weekly_tally()
+        weekly_tally()
+    logger.info("TASK LOOP - after should_task_run() invoked")
 
 @bot.event
 async def on_ready():
@@ -414,7 +421,7 @@ async def cmd_test_kill(ctx, victim:str=""):
         'time': "<2025-10-02T22:57:03.975Z>",
         'zone': "Test_Zone",
         'weapon': "Test_Weapon",
-        'game_mode': "Test_Mode",
+        'game_mode': "SC_Default",
         'current_ship': "Test_Ship",
         'client_ver': "N/A",
         'anonymize_state': {'enabled': False }
@@ -553,14 +560,13 @@ def process_kill(result:str, details:object, store_in_db:bool):
 
     success = True
     if result == "killer":
-        # Record kill in memory
-        g_kill_timestamps[discord_id].append(kill_time.timestamp())
-        g_kill_streaks[discord_id] += 1
+        channel = None
 
         # ------------------------------------------------------------------------------------------
         # Record kill in database
         # ------------------------------------------------------------------------------------------
         if store_in_db:
+            channel = bot.get_channel(CHANNEL_SC_PUBLIC)
             logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
             try:
                 conn = get_connection()
@@ -585,18 +591,20 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 if conn:
                     conn.close()
         else:
+            channel = bot.get_channel(CHANNEL_TEST_SERVER_PUBLIC)
             logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
         # ------------------------------------------------------------------------------------------
         # Announce kill in Discord
         # ------------------------------------------------------------------------------------------
-        bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
-
-        #zone_human_readable = convert_string(data_map.zonesMapping, zone, fuzzy_search=True)
-        # game_mode == "SC_Default"
-        channel = bot.get_channel(CHANNEL_SC_PUBLIC)
-        if success and channel:
+        if game_mode == "SC_Default" and success and channel:
             try:
+                # Record kill in memory used to track kill streaks and multi-kills
+                g_kill_timestamps[discord_id].append(kill_time.timestamp())
+                g_kill_streaks[discord_id] += 1
+
+                bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
+
                 # Regular kill announcement
                 asyncio.run_coroutine_threadsafe(
                     channel.send(f"**{bwc_name}** killed ☠️ **{victim}** ☠️ using {weapon_human_readable}"),
@@ -792,6 +800,7 @@ def should_task_run(task_name:str, interval_days:int = 7):
             cursor.close()
         if conn:
             conn.close()
+    logger.info("TASK LOOP - should_task_run() returning False")
     return False
 
 # ---------------------------------------------------------------------------
