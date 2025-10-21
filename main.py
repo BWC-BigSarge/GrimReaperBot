@@ -120,6 +120,7 @@ def init_cnxpool():
                                           pool_size=8,
                                           **dbconfig)
     logger.info("Database connection pool established")
+
 # ---------------------------------------------------------------------------
 # Bot Events
 # ---------------------------------------------------------------------------
@@ -136,7 +137,7 @@ def run_db_check():
 
     logger.info("TASK LOOP - before should_task_run() invoked")
     if should_task_run("weekly_kill_tally", 7):
-        weekly_tally()
+        post_weekly_tally(CHANNEL_SC_ANNOUNCEMENTS)
     logger.info("TASK LOOP - after should_task_run() invoked")
 
 @bot.event
@@ -200,23 +201,17 @@ async def on_ready():
         hourly_task_check.start()
 
 # ---------------------------------------------------------------------------
-# APScheduler Setup
+# Perform Actions
 # ---------------------------------------------------------------------------
-# jobstores = {
-#     "default": SQLAlchemyJobStore(url=f"sqlite:///{DB_PATH}")
-# }
-# scheduler = AsyncIOScheduler(jobstores=jobstores)
-
-
-async def weekly_tally():
+async def post_weekly_tally(channel_id:int):
     """Generate and post the weekly tally."""
     logger.info("Generating weekly tally...")
 
     try:
         # Post the message to the announcements channel
-        channel = bot.get_channel(CHANNEL_SC_ANNOUNCEMENTS)
+        channel = bot.get_channel(channel_id)
         if not channel:
-            logger.error(f"Announcements Channel (ID: {CHANNEL_SC_ANNOUNCEMENTS}) not found.")
+            logger.error(f"Post Weekly Tally Channel (ID: {channel_id}) not found.")
             return
 
         conn = get_connection()
@@ -237,10 +232,10 @@ async def weekly_tally():
             """)
         results_AC = cursor.fetchall() # List of tuples (discord_id, kill_count)
     except mysql.connector.Error as err:
-        logger.error(f"Database error in weekly_tally: {err}")
+        logger.error(f"Database error in post_weekly_tally: {err}")
         return
     except Exception as e:
-        logger.error(f"Unexpected error in weekly_tally: {e}")
+        logger.error(f"Unexpected error in post_weekly_tally: {e}")
         return
     finally:
         if cursor:
@@ -324,16 +319,6 @@ def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills
             conn.close()
     return -1
 
-# # Add job if it doesn’t exist
-# if not scheduler.get_job("weekly_tally"):
-#     scheduler.add_job(
-#         weekly_tally,
-#         "interval",
-#         hours=168,  # 7 days
-#         id="weekly_tally",
-#         replace_existing=True,
-#     )
-
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -360,7 +345,7 @@ async def cmd_total_kills_error(ctx, error):
 @commands.has_role(ROLE_GrimReaperAdmin)
 async def cmd_weekly_tally(ctx):
     """Manually trigger the weekly tally (Admin only)."""
-    await weekly_tally()
+    await post_weekly_tally(CHANNEL_SC_ANNOUNCEMENTS)
     await ctx.send("✅ Weekly tally triggered manually.")
 
 @cmd_weekly_tally.error
@@ -416,7 +401,7 @@ async def cmd_test_kill(ctx, victim:str=""):
     if victim == "":
         victim = "Test_Victim"
     details = {
-        'discord_id': str(ctx.author.id),
+        'discord_id': "123456789012345678", #str(ctx.author.id),
         'player': "Test_RSI_Name",
         'victim': victim,
         'time': "<2025-10-02T22:57:03.975Z>",
@@ -431,6 +416,19 @@ async def cmd_test_kill(ctx, victim:str=""):
 
 @cmd_test_kill.error
 async def cmd_test_kill_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+
+# ---------------------------------------------------------------------------
+
+@bot.command(name="grimreaper_testtally")
+@commands.has_role(ROLE_TEST_ADMIN)
+async def cmd_test_tally(ctx):
+    """Test weekly tally embed"""
+    await post_weekly_tally(CHANNEL_TEST_SERVER_PUBLIC)
+
+@cmd_test_tally.error
+async def cmd_test_tally_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to run this command.")
 
@@ -606,39 +604,20 @@ def process_kill(result:str, details:object, store_in_db:bool):
 
                 bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
 
-                # Regular kill announcement
                 victim_link = f"[{victim}](https://robertsspaceindustries.com/citizens/{victim})"
-                asyncio.run_coroutine_threadsafe(
-                    channel.send(f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"),
-                    bot.loop
-                )
+                kill_message = f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"
 
                 # Kill streaks
                 if g_kill_streaks[discord_id] == 50:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"),
-                        bot.loop
-                    )
+                    kill_message += f"\n 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 20:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"),
-                        bot.loop
-                    )
+                    kill_message += f"\n 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 10:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"),
-                        bot.loop
-                    )
+                    kill_message += f"\n 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 5:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"),
-                        bot.loop
-                    )
+                    kill_message += f"\n 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"
                 elif g_kill_streaks[discord_id] == 3:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"),
-                        bot.loop
-                    )
+                    kill_message += f"\n 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"
 
                 # Clean up any kills that are older than 60 seconds
                 now = datetime.utcnow().timestamp()
@@ -646,30 +625,21 @@ def process_kill(result:str, details:object, store_in_db:bool):
 
                 # Chain Multiple kills
                 if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> ⚡ Killimanjaro! ⚡ **{bwc_name}**"),
-                        bot.loop
-                    )
+                    kill_message += f"\n ⚡⚡⚡⚡⚡⚡ Killimanjaro! ⚡⚡⚡⚡⚡⚡ **{bwc_name}**"
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> ⚡ Killtacular! ⚡ **{bwc_name}**"),
-                        bot.loop
-                    )
+                    kill_message += f"\n ⚡⚡⚡⚡⚡ Killtacular! ⚡⚡⚡⚡⚡ **{bwc_name}**"
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> ⚡ OverKill! ⚡ **{bwc_name}**"),
-                        bot.loop
-                    )
+                    kill_message += f"\n ⚡⚡⚡⚡ OverKill! ⚡⚡⚡⚡ **{bwc_name}**"
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> ⚡ Triple Kill ⚡ **{bwc_name}**"),
-                        bot.loop
-                    )
+                    kill_message += f"\n ⚡⚡⚡ Triple Kill! ⚡⚡⚡ **{bwc_name}**"
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> ⚡ Double Kill ⚡ **{bwc_name}**"),
-                        bot.loop
-                    )
+                    kill_message += f"\n ⚡⚡ Double Kill! ⚡⚡ **{bwc_name}**"
+
+                # Send kill announcement
+                asyncio.run_coroutine_threadsafe(
+                    channel.send(kill_message),
+                    bot.loop
+                )
 
                 # Milestones
                 total_kills = db_total_kills(discord_id)
@@ -735,9 +705,9 @@ def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> st
             if ret and ret[0]:
                 bwc_name = ret[0]
         except mysql.connector.Error as err:
-            logger.error(f"Database error in weekly_tally fetching rsi_handle: {err}")
+            logger.error(f"Database error in get_bwc_name fetching rsi_handle: {err}")
         except Exception as e:
-            logger.error(f"Unexpected error in weekly_tally fetching rsi_handle: {e}")
+            logger.error(f"Unexpected error in get_bwc_name fetching rsi_handle: {e}")
         finally:
             if cursor:
                 cursor.close()
