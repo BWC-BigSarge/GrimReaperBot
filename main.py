@@ -1061,7 +1061,7 @@ async def post_weekly_tally(channel_id:int):
 
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
-    embed_var.add_field(name="\u200b", value="Download the Kill Tracker client [here](https://github.com/BWC-BigSarge/BlackWidowCompanyKilltracker/releases/latest)\n\u3164", inline=True)
+    embed_var.add_field(name="\u200b", value="Download the Kill Tracker client [here](https://discord.com/channels/378419940027269130/480367983558918174/1429925997007999036)\n\u3164", inline=True)
 
     #embed_var.set_image(url="https://cdn.discordapp.com/attachments/1079475596314280066/1430355324287844505/resized_BannerStandard.png?ex=68f979b4&is=68f82834&hm=dfd739ab373f667943af6f7f75b03d13245e36ca2a81d63c169fbb362ea50d4b&") # This image is shown at the bottom of the embed
     embed_var.set_footer(text="[BWC] Star Citizen Kill Tracker Weekly Kill Tally Report")
@@ -1222,19 +1222,16 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
                     kill_message += "\n ⚡⚡ Double Kill! ⚡⚡"
 
+                # Milestones
+                total_kills = db_total_kills(discord_id)
+                if total_kills > 0 and total_kills % 50 == 0:
+                    kill_message += f"\n 🏆 {bwc_name} reached **{total_kills} total kills!** 🏆\n"
+
                 # Send kill announcement
                 asyncio.run_coroutine_threadsafe(
                     channel.send(kill_message),
                     bot.loop
                 )
-
-                # Milestones
-                total_kills = db_total_kills(discord_id)
-                if total_kills > 0 and total_kills % 50 == 0:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🏆 {bwc_name} reached **{total_kills} kills!**"),
-                        bot.loop
-                    )
             except Exception as e:
                 logger.error(f"Unexpected error sending kill announcement: {e}")
     elif result == "killed":
