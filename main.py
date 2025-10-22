@@ -1124,6 +1124,7 @@ async def post_weekly_tally(channel_id:int):
 #}
 def process_kill(result:str, details:object, store_in_db:bool):
     discord_id = details.get("discord_id")
+    ping_self = details.get("ping_self", False)
     player = details.get("player")
     victim = details.get("victim")
     kill_time = details.get("time") # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
@@ -1189,7 +1190,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 g_kill_timestamps[discord_id].append(now)
                 g_kill_streaks[discord_id] += 1
 
-                bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
+                bwc_name = get_bwc_name(discord_id, ping_self, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
 
                 victim_link = f"[{victim}](https://robertsspaceindustries.com/citizens/{victim})"
                 kill_message = f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"
