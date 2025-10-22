@@ -43,6 +43,8 @@ CHANNEL_SC_PUBLIC = 480367983558918174
 CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
 CHANNEL_TEST_SERVER_PUBLIC = 1420804944075689994
 
+DISCORD_ID_TEST = "123456789012345678"
+
 # ERROR CODES:
 ERRORCODE_Void = 469
 ERRORCODE_Expired = 470
@@ -201,126 +203,7 @@ async def on_ready():
         hourly_task_check.start()
 
 # ---------------------------------------------------------------------------
-# Perform Actions
-# ---------------------------------------------------------------------------
-async def post_weekly_tally(channel_id:int):
-    """Generate and post the weekly tally."""
-    logger.info("Generating weekly tally...")
-
-    try:
-        # Post the message to the announcements channel
-        channel = bot.get_channel(channel_id)
-        if not channel:
-            logger.error(f"Post Weekly Tally Channel (ID: {channel_id}) not found.")
-            return
-
-        conn = get_connection()
-        cursor = conn.cursor()
-        # Get kills from the past week from the kill_feed table, by counting number of rows with discord_id and time_stamp column
-        cursor.execute("""
-            SELECT discord_id, COUNT(*) as kill_count_pu
-            FROM kill_feed
-            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]' AND game_mode = 'SC_Default'
-            GROUP BY discord_id
-            """)
-        results_PU = cursor.fetchall() # List of tuples (discord_id, kill_count)
-        cursor.execute("""
-            SELECT discord_id, COUNT(*) as kill_count_ac
-            FROM kill_feed
-            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]' AND game_mode != 'SC_Default'
-            GROUP BY discord_id
-            """)
-        results_AC = cursor.fetchall() # List of tuples (discord_id, kill_count)
-    except mysql.connector.Error as err:
-        logger.error(f"Database error in post_weekly_tally: {err}")
-        return
-    except Exception as e:
-        logger.error(f"Unexpected error in post_weekly_tally: {e}")
-        return
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-    if not results_PU:
-        logger.info("No PU kills recorded in the past week.")
-    if not results_AC:
-        logger.info("No AC kills recorded in the past week.")
-    logger.info(f"Weekly tally results PU: {results_PU}")
-    logger.info(f"Weekly tally results AC: {results_AC}")
-
-    results_PU = sorted(results_PU, key=lambda x: x[1], reverse=True) # Sort PU results by kill_count descending
-    results_AC = sorted(results_AC, key=lambda x: x[1], reverse=True) # Sort AC results by kill_count descending
-
-    # Create an embed message with the top 10 killers for both PU and AC, each in their own section
-    embed_desc = "Top 10 BWC members with most kills in the PU and AC for the week of **" + (datetime.utcnow() - timedelta(days=7)).strftime("%m-%d") + "**\n\u3164"
-    embed_var = discord.Embed(title="Weekly Kill Tally", color=0xff0000, description=embed_desc, timestamp=datetime.utcnow())
-    embed_var.set_author(name="GrimReaperBot", icon_url="https://media.discordapp.net/attachments/1079475596314280066/1427308241796333691/5ae5886122e57b7510cc31a69b9b2dca.png?ex=68ee63e2&is=68ed1262&hm=fb4fd804a994eb6ec1d7c6b62bb55a877441934ae273e2f05816a51be9ff2e51&=&format=webp&quality=lossless")
-    #embed_var.set_image(url="")
-    embed_var.set_footer(text="[BWC] Kill Tracker")
-    if results_PU:
-        pu_description = ""
-        rank = 1
-        for discord_id, kill_count in results_PU[:10]: # Top 10 PU killers
-            bwc_name = get_bwc_name(discord_id, True)
-            pu_description += f"**{rank}.** {bwc_name} "
-            if rank == 1:
-                pu_description += "🥇"
-            elif rank == 2:
-                pu_description += "🥈"
-            elif rank == 3:
-                pu_description += "🥉"
-            pu_description += f"\n> {kill_count} kills\n"
-            rank += 1
-        pu_description += "\u3164"
-        embed_var.add_field(name="🚀 Persistent Universe", value=pu_description, inline=True)
-    if results_AC:
-        ac_description = ""
-        rank = 1
-        for discord_id, kill_count in results_AC[:10]: # Top 10 AC killers
-            bwc_name = get_bwc_name(discord_id, True)
-            ac_description += f"**{rank}.** {bwc_name} "
-            if rank == 1:
-                ac_description += "🥇"
-            elif rank == 2:
-                ac_description += "🥈"
-            elif rank == 3:
-                ac_description += "🥉"
-            ac_description += f"\n> {kill_count} kills\n"
-            rank += 1
-        ac_description += "\u3164"
-        embed_var.add_field(name="🕹 Arena Commander", value=ac_description, inline=True)
-    try:
-        await channel.send(embed=embed_var)
-        logger.info("Weekly tally posted successfully.")
-    except Exception as e:
-        logger.error(f"Error posting weekly tally: {e}")
-
-def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills if successful
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
-        ret = cursor.fetchone()
-        if ret:
-            total = ret[0]
-            return total
-    except mysql.connector.Error as err:
-        logger.error(f"Database error in total_kills: {err}")
-        return -1
-    except Exception as e:
-        logger.error(f"Unexpected error in total_kills: {e}")
-        return -1
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-    return -1
-
-# ---------------------------------------------------------------------------
-# Commands
+# Bot Commands
 # ---------------------------------------------------------------------------
 @bot.command(name="grimreaper_totalkills")
 @commands.has_role(ROLE_BWC)
@@ -401,7 +284,7 @@ async def cmd_test_kill(ctx, victim:str=""):
     if victim == "":
         victim = "Test_Victim"
     details = {
-        'discord_id': "123456789012345678", #str(ctx.author.id),
+        'discord_id': DISCORD_ID_TEST,
         'player': "Test_RSI_Name",
         'victim': victim,
         'time': "<2025-10-02T22:57:03.975Z>",
@@ -433,7 +316,8 @@ async def cmd_test_tally_error(ctx, error):
         await ctx.send("❌ You do not have permission to run this command.")
 
 # ---------------------------------------------------------------------------
-
+# Utility Functions
+# ---------------------------------------------------------------------------
 def set_api_status(ctx, discord_id:str, new_status:str):
     try:
         conn = get_connection()
@@ -485,184 +369,11 @@ def set_api_status(ctx, discord_id:str, new_status:str):
         if conn:
             conn.close()
 
-# Sample JSON Payloads:
-# Current user killed themselves
-#{
-#    "result": "suicide",
-#    "data": {
-#        'discord_id': self.discord_id["current"],
-#        'player': curr_user,
-#        'victim': curr_user,
-#        'time': "<2025-10-02T22:57:03.975Z>",
-#        'zone': zone,
-#        'weapon': weapon,
-#        'game_mode': self.game_mode,
-#        'current_ship': self.active_ship["current"],
-#        'client_ver': self.local_version,
-#        'anonymize_state': {'enabled': False }
-#    }
-#}
-#
-# Current user died
-#{
-#    "result": "killed",
-#    "data": {
-#        'discord_id': self.discord_id["current"],
-#        'player': killer,
-#        'victim': curr_user,
-#        'time': "<2025-10-02T22:57:03.975Z>",
-#        'zone': self.active_ship["current"],
-#        'weapon': weapon,
-#        'game_mode': self.game_mode,
-#        'current_ship': self.active_ship["current"],
-#        'client_ver': self.local_version,
-#        'anonymize_state': {'enabled': False }
-#    }
-#}
-#
-# Current user killed other player
-#{
-#    "result": "killer",
-#    "data": {
-#        "discord_id": self.discord_id["current"],
-#        "player": curr_user,
-#        "victim": killed,
-#        "time": "<2025-10-02T22:57:03.975Z>",
-#        "zone": zone,
-#        "weapon": weapon,
-#        "game_mode": self.game_mode,
-#        "current_ship": self.active_ship["current"],
-#        "client_ver": self.local_version,
-#        "anonymize_state": {'enabled': False }
-#     }
-#}
-def process_kill(result:str, details:object, store_in_db:bool):
-    discord_id = details.get("discord_id")
-    player = details.get("player")
-    victim = details.get("victim")
-    kill_time = details.get("time") # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
-    if kill_time:
-        kill_time = kill_time.strip("<>")
-        kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
-    zone = details.get("zone")
-    weapon = details.get("weapon")
-    game_mode = details.get("game_mode")
-    client_ver = details.get("client_ver")
-    current_ship = details.get("current_ship")
-    anonymize_state = details.get("anonymize_state")
-    if(anonymize_state.get("enabled")):
-        logger.info("Reporting anonymized kill")
-        discord_id = "[BWC]"
-        player = "[BWC]"
-
-    weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
-
-    success = True
-    if result == "killer":
-        channel = None
-
-        # ------------------------------------------------------------------------------------------
-        # Record kill in database
-        # ------------------------------------------------------------------------------------------
-        if store_in_db:
-            channel = bot.get_channel(CHANNEL_SC_PUBLIC)
-            logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
-            try:
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute(
-                        """
-                        INSERT INTO kill_feed (discord_id, rsi_handle, victim, weapon, zone, current_ship, game_mode, time_stamp, client_ver)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (discord_id, player, victim, weapon, zone, current_ship, game_mode, kill_time, client_ver)
-                    )
-                conn.commit()
-            except mysql.connector.Error as err:
-                logger.error(f"Error recording kill in database: {err}")
-                success = False
-            except Exception as e:
-                logger.error(f"Unexpected error recording kill in database: {e}")
-                success = False
-            finally:
-                if cursor:
-                    cursor.close()
-                if conn:
-                    conn.close()
-        else:
-            channel = bot.get_channel(CHANNEL_TEST_SERVER_PUBLIC)
-            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
-
-        # ------------------------------------------------------------------------------------------
-        # Announce kill in Discord
-        # ------------------------------------------------------------------------------------------
-        if game_mode == "SC_Default" and success and channel:
-            try:
-                # Record kill in memory used to track kill streaks and multi-kills
-                g_kill_timestamps[discord_id].append(kill_time.timestamp())
-                g_kill_streaks[discord_id] += 1
-
-                bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
-
-                victim_link = f"[{victim}](https://robertsspaceindustries.com/citizens/{victim})"
-                kill_message = f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"
-
-                # Kill streaks
-                if g_kill_streaks[discord_id] == 50:
-                    kill_message += f"\n 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"
-                elif g_kill_streaks[discord_id] == 20:
-                    kill_message += f"\n 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"
-                elif g_kill_streaks[discord_id] == 10:
-                    kill_message += f"\n 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"
-                elif g_kill_streaks[discord_id] == 5:
-                    kill_message += f"\n 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"
-                elif g_kill_streaks[discord_id] == 3:
-                    kill_message += f"\n 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"
-
-                # Clean up any kills that are older than 60 seconds
-                now = datetime.utcnow().timestamp()
-                g_kill_timestamps[discord_id] = [t for t in g_kill_timestamps[discord_id] if now - t <= 60]
-
-                # Chain Multiple kills
-                if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
-                    kill_message += f"\n ⚡⚡⚡⚡⚡⚡ Killimanjaro! ⚡⚡⚡⚡⚡⚡ **{bwc_name}**"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
-                    kill_message += f"\n ⚡⚡⚡⚡⚡ Killtacular! ⚡⚡⚡⚡⚡ **{bwc_name}**"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
-                    kill_message += f"\n ⚡⚡⚡⚡ OverKill! ⚡⚡⚡⚡ **{bwc_name}**"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
-                    kill_message += f"\n ⚡⚡⚡ Triple Kill! ⚡⚡⚡ **{bwc_name}**"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
-                    kill_message += f"\n ⚡⚡ Double Kill! ⚡⚡ **{bwc_name}**"
-
-                # Send kill announcement
-                asyncio.run_coroutine_threadsafe(
-                    channel.send(kill_message),
-                    bot.loop
-                )
-
-                # Milestones
-                total_kills = db_total_kills(discord_id)
-                if total_kills > 0 and total_kills % 50 == 0:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send(f"> 🏆 {bwc_name} reached **{total_kills} kills!**"),
-                        bot.loop
-                    )
-            except Exception as e:
-                logger.error(f"Unexpected error sending kill announcement: {e}")
-    elif result == "killed":
-        g_kill_streaks[discord_id] = 0
-        logger.info(f"Reporting killed player: {victim} with ship {current_ship} playing {game_mode}, killed by {player} with {weapon} in {zone}")
-    elif result == "suicide":
-        g_kill_streaks[discord_id] = 0
-        logger.info(f"Reporting suicide: {victim} with ship {current_ship} playing {game_mode}, died by {weapon} in {zone}")
-    else:
-        logger.warning(f"Unhandled kill result type: {result}")
-        success = False
-    return success
-
 def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> str:
     """ Reassign bwc_name to how their name is formatted in Discord. Using their discord_id """
+    if discord_id == DISCORD_ID_TEST:
+        return fallback_name
+
     if ping_user:
         bwc_name = f"<@{discord_id}>"
         return bwc_name
@@ -774,6 +485,28 @@ def should_task_run(task_name:str, interval_days:int = 7):
             conn.close()
     logger.info("TASK LOOP - should_task_run() returning False")
     return False
+
+def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills if successful
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
+        ret = cursor.fetchone()
+        if ret:
+            total = ret[0]
+            return total
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in total_kills: {err}")
+        return -1
+    except Exception as e:
+        logger.error(f"Unexpected error in total_kills: {e}")
+        return -1
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+    return -1
 
 # ---------------------------------------------------------------------------
 # API Server for Website Requests
@@ -1051,6 +784,468 @@ def report_kill():
     else:
         logger.error("Failed to process kill")
         return jsonify({"error": "Failed to process kill"}), 500
+
+# ---------------------------------------------------------------------------
+# Perform Actions
+# ---------------------------------------------------------------------------
+async def post_weekly_tally(channel_id:int):
+    """Generate and post the weekly tally."""
+    logger.info("Generating weekly tally...")
+
+    try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            logger.error(f"Post Weekly Tally Channel (ID: {channel_id}) not found.")
+            return
+
+        # Get kills from the past week from the kill_feed table, by counting number of rows with discord_id and time_stamp column
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT discord_id, victim, weapon, current_ship, zone, game_mode
+            FROM kill_feed
+            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]'
+            """)
+        weekly_kill_list = cursor.fetchall() # List of tuples (discord_id, victim, weapon, current_ship, zone, game_mode)
+
+        # Sort into 4 buckets based on PU vs AC and weapon type (FPS vs Ship)
+        kill_buckets = {
+            'PU_FPS': [],
+            'PU_Ship': [],
+            'AC_FPS': [],
+            'AC_Ship': []
+        }
+        for discord_id, victim, weapon, current_ship, zone, game_mode in weekly_kill_list:
+            is_ac = game_mode != 'SC_Default'
+            is_ship = False
+            if weapon.split('_')[0].isupper(): # If the first part of weapon up to the first underscore is in all capital letters, consider it a ship weapon
+                is_ship = True
+
+            if is_ac and is_ship:
+                kill_buckets['AC_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            elif is_ac and not is_ship:
+                kill_buckets['AC_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            elif not is_ac and is_ship:
+                kill_buckets['PU_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            else:
+                kill_buckets['PU_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+
+        pu_fps_total_kills = len(kill_buckets['PU_FPS'])
+        pu_fps_weapon_usage = {}
+        pu_fps_member_kills = {}
+        for discord_id, victim, weapon, current_ship, zone, game_mode in kill_buckets['PU_FPS']:
+            if weapon in pu_fps_weapon_usage:
+                pu_fps_weapon_usage[weapon] += 1
+            else:
+                pu_fps_weapon_usage[weapon] = 1
+            if discord_id in pu_fps_member_kills:
+                pu_fps_member_kills[discord_id] += 1
+            else:
+                pu_fps_member_kills[discord_id] = 1
+    
+        pu_ship_total_kills = len(kill_buckets['PU_Ship'])
+        pu_ship_weapon_usage = {}
+        pu_ship_curship_usage = {}
+        pu_ship_member_kills = {}
+        for discord_id, victim, weapon, current_ship, zone, game_mode in kill_buckets['PU_Ship']:
+            if weapon in pu_ship_weapon_usage:
+                pu_ship_weapon_usage[weapon] += 1
+            else:
+                pu_ship_weapon_usage[weapon] = 1
+            if current_ship in pu_ship_curship_usage:
+                pu_ship_curship_usage[current_ship] += 1
+            else:
+                pu_ship_curship_usage[current_ship] = 1
+            if discord_id in pu_ship_member_kills:
+                pu_ship_member_kills[discord_id] += 1
+            else:
+                pu_ship_member_kills[discord_id] = 1
+
+        ac_fps_total_kills = len(kill_buckets['AC_FPS'])
+        ac_fps_weapon_usage = {}
+        ac_fps_member_kills = {}
+        for discord_id, victim, weapon, current_ship, zone, game_mode in kill_buckets['AC_FPS']:
+            if weapon in ac_fps_weapon_usage:
+                ac_fps_weapon_usage[weapon] += 1
+            else:
+                ac_fps_weapon_usage[weapon] = 1
+            if discord_id in ac_fps_member_kills:
+                ac_fps_member_kills[discord_id] += 1
+            else:
+                ac_fps_member_kills[discord_id] = 1
+
+        ac_ship_total_kills = len(kill_buckets['AC_Ship'])
+        ac_ship_weapon_usage = {}
+        ac_ship_curship_usage = {}
+        ac_ship_member_kills = {}
+        for discord_id, victim, weapon, current_ship, zone, game_mode in kill_buckets['AC_Ship']:
+            if weapon in ac_ship_weapon_usage:
+                ac_ship_weapon_usage[weapon] += 1
+            else:
+                ac_ship_weapon_usage[weapon] = 1
+            if current_ship in ac_ship_curship_usage:
+                ac_ship_curship_usage[current_ship] += 1
+            else:
+                ac_ship_curship_usage[current_ship] = 1
+            if discord_id in ac_ship_member_kills:
+                ac_ship_member_kills[discord_id] += 1
+            else:
+                ac_ship_member_kills[discord_id] = 1
+
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in post_weekly_tally: {err}")
+        return
+    except Exception as e:
+        logger.error(f"Unexpected error in post_weekly_tally: {e}")
+        return
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+    # Create an embed message (NOTE: every third `embed_var.add_field()` is blank to create a 2 column format)
+    embed_desc = "Black Widow Company's Star Citizen kill report from **" + (datetime.utcnow() - timedelta(days=7)).strftime("%B %d") + "** to **" + datetime.utcnow().strftime("%B %d") + "**\n\u3164"
+    embed_var = discord.Embed(title="Weekly Kill Tally", color=0xff0000, description=embed_desc, timestamp=datetime.utcnow())
+    embed_var.set_author(name="GrimReaperBot", icon_url="https://media.discordapp.net/attachments/1079475596314280066/1427308241796333691/5ae5886122e57b7510cc31a69b9b2dca.png?ex=68ee63e2&is=68ed1262&hm=fb4fd804a994eb6ec1d7c6b62bb55a877441934ae273e2f05816a51be9ff2e51&=&format=webp&quality=lossless")
+
+    pu_total_desc = f"- **{pu_fps_total_kills + pu_ship_total_kills}** total kills recorded\n"
+    pu_total_desc += f"> **{pu_fps_total_kills}** FPS kills\n"
+    pu_total_desc += f"> **{pu_ship_total_kills}** Ship kills\n\u3164"
+    pu_total_desc += "\n**Top FPS Weapons:**\n"
+    sorted_pu_fps_weapons = sorted(pu_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for weapon, count in sorted_pu_fps_weapons[:3]: # Limit to 3
+        weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
+        pu_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        pu_total_desc += f"> \u3164\n"
+    pu_total_desc += "\n**Top Ship Weapons:**\n"
+    sorted_pu_ship_weapons = sorted(pu_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for weapon, count in sorted_pu_ship_weapons[:3]: # Limit to 3
+        weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
+        pu_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        pu_total_desc += f"> \u3164\n"
+    pu_total_desc += "\n**Top Ships:**\n"
+    sorted_pu_ship_curships = sorted(pu_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for ship, count in sorted_pu_ship_curships[:3]: # Limit to 3
+        ship_human_readable = convert_string(data_map.vehicleMapping, ship, fuzzy_search=False)
+        if ship_human_readable == "FPS":
+            ship_human_readable = "Undetermined"
+        pu_total_desc += f"> {ship_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        pu_total_desc += f"> \u3164\n"
+    #pu_total_desc += "\n\u3164"
+    embed_var.add_field(name="🚀 Persistent Universe", value=pu_total_desc, inline=True)
+
+    ac_total_desc = f"- **{ac_fps_total_kills + ac_ship_total_kills}** total kills recorded\n"
+    ac_total_desc += f"> **{ac_fps_total_kills}** FPS kills\n"
+    ac_total_desc += f"> **{ac_ship_total_kills}** Ship kills\n\u3164"
+    ac_total_desc += "\n**Top FPS Weapons:**\n"
+    sorted_ac_fps_weapons = sorted(ac_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for weapon, count in sorted_ac_fps_weapons[:3]: # Limit to 3
+        weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
+        ac_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        ac_total_desc += f"> \u3164\n"
+    ac_total_desc += "\n**Top Ship Weapons:**\n"
+    sorted_ac_ship_weapons = sorted(ac_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for weapon, count in sorted_ac_ship_weapons[:3]: # Limit to 3
+        weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
+        ac_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        ac_total_desc += f"> \u3164\n"
+    ac_total_desc += "\n**Top Ships:**\n"
+    sorted_ac_ship_curships = sorted(ac_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
+    pad_count = 3
+    for ship, count in sorted_ac_ship_curships[:3]: # Limit to 3
+        ship_human_readable = convert_string(data_map.vehicleMapping, ship, fuzzy_search=False)
+        if ship_human_readable == "FPS":
+            ship_human_readable = "Undetermined"
+        ac_total_desc += f"> {ship_human_readable}: {count}\n"
+        pad_count -= 1
+    for _ in range(pad_count):
+        ac_total_desc += f"> \u3164\n"
+    #ac_total_desc += "\n\u3164"
+    embed_var.add_field(name="🕹 Arena Commander", value=ac_total_desc, inline=True)
+
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
+
+    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - FPS Combat** ~~-----~~", inline=True)
+    embed_var.add_field(name="\u200b", value="~~---------------------------------~~", inline=True)
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
+
+    pu_top10_desc = ""
+    rank = 1
+    sorted_pu_fps_members = sorted(pu_fps_member_kills.items(), key=lambda x: x[1], reverse=True)
+    for discord_id, kill_count in sorted_pu_fps_members[:10]: # Top 10 PU FPS killers
+        bwc_name = get_bwc_name(discord_id, True)
+        pu_top10_desc += f"**{rank}.** {bwc_name} "
+        if rank == 1:
+            pu_top10_desc += "🥇"
+        elif rank == 2:
+            pu_top10_desc += "🥈"
+        elif rank == 3:
+            pu_top10_desc += "🥉"
+        pu_top10_desc += f"\n> {kill_count} kills\n"
+        rank += 1
+    #pu_top10_desc += "\n\u3164"
+    embed_var.add_field(name="🚀 Persistent Universe", value=pu_top10_desc, inline=True)
+
+    ac_top10_desc = ""
+    rank = 1
+    sorted_ac_fps_members = sorted(ac_fps_member_kills.items(), key=lambda x: x[1], reverse=True)
+    for discord_id, kill_count in sorted_ac_fps_members[:10]: # Top 10 AC FPS killers
+        bwc_name = get_bwc_name(discord_id, True)
+        ac_top10_desc += f"**{rank}.** {bwc_name} "
+        if rank == 1:
+            ac_top10_desc += "🥇"
+        elif rank == 2:
+            ac_top10_desc += "🥈"
+        elif rank == 3:
+            ac_top10_desc += "🥉"
+        ac_top10_desc += f"\n> {kill_count} kills\n"
+        rank += 1
+    #ac_top10_desc += "\n\u3164"
+    embed_var.add_field(name="🕹 Arena Commander", value=ac_top10_desc, inline=True)
+
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
+
+    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - Ship Combat** ~~-----~~", inline=True)
+    embed_var.add_field(name="\u200b", value="~~---------------------------------~~", inline=True)
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
+
+    pu_ship_top10_desc = ""
+    rank = 1
+    sorted_pu_ship_members = sorted(pu_ship_member_kills.items(), key=lambda x: x[1], reverse=True)
+    for discord_id, kill_count in sorted_pu_ship_members[:10]: # Top 10 PU Ship killers
+        bwc_name = get_bwc_name(discord_id, True)
+        pu_ship_top10_desc += f"**{rank}.** {bwc_name} "
+        if rank == 1:
+            pu_ship_top10_desc += "🥇"
+        elif rank == 2:
+            pu_ship_top10_desc += "🥈"
+        elif rank == 3:
+            pu_ship_top10_desc += "🥉"
+        pu_ship_top10_desc += f"\n> {kill_count} kills\n"
+        rank += 1
+    #pu_ship_top10_desc += "\n\u3164"
+    embed_var.add_field(name="🚀 Persistent Universe", value=pu_ship_top10_desc, inline=True)
+
+    ac_ship_top10_desc = ""
+    rank = 1
+    sorted_ac_ship_members = sorted(ac_ship_member_kills.items(), key=lambda x: x[1], reverse=True)
+    for discord_id, kill_count in sorted_ac_ship_members[:10]: # Top 10 AC Ship killers
+        bwc_name = get_bwc_name(discord_id, True)
+        ac_ship_top10_desc += f"**{rank}.** {bwc_name} "
+        if rank == 1:
+            ac_ship_top10_desc += "🥇"
+        elif rank == 2:
+            ac_ship_top10_desc += "🥈"
+        elif rank == 3:
+            ac_ship_top10_desc += "🥉"
+        ac_ship_top10_desc += f"\n> {kill_count} kills\n"
+        rank += 1
+    #ac_ship_top10_desc += "\n\u3164"
+    embed_var.add_field(name="🕹 Arena Commander", value=ac_ship_top10_desc, inline=True)
+
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
+
+    embed_var.add_field(name="\u200b", value="Download the Kill Tracker client [here](https://github.com/BWC-BigSarge/BlackWidowCompanyKilltracker/releases/latest)\n\u3164", inline=True)
+
+    #embed_var.set_image(url="https://cdn.discordapp.com/attachments/1079475596314280066/1430355324287844505/resized_BannerStandard.png?ex=68f979b4&is=68f82834&hm=dfd739ab373f667943af6f7f75b03d13245e36ca2a81d63c169fbb362ea50d4b&") # This image is shown at the bottom of the embed
+    embed_var.set_footer(text="[BWC] Star Citizen Kill Tracker Weekly Kill Tally Report")
+    try:
+        await channel.send(embed=embed_var)
+        logger.info("Weekly tally posted successfully.")
+    except Exception as e:
+        logger.error(f"Error posting weekly tally: {e}")
+
+# Sample JSON Payloads:
+# Current user killed themselves
+#{
+#    "result": "suicide",
+#    "data": {
+#        'discord_id': self.discord_id["current"],
+#        'player': curr_user,
+#        'victim': curr_user,
+#        'time': "<2025-10-02T22:57:03.975Z>",
+#        'zone': zone,
+#        'weapon': weapon,
+#        'game_mode': self.game_mode,
+#        'current_ship': self.active_ship["current"],
+#        'client_ver': self.local_version,
+#        'anonymize_state': {'enabled': False }
+#    }
+#}
+#
+# Current user died
+#{
+#    "result": "killed",
+#    "data": {
+#        'discord_id': self.discord_id["current"],
+#        'player': killer,
+#        'victim': curr_user,
+#        'time': "<2025-10-02T22:57:03.975Z>",
+#        'zone': self.active_ship["current"],
+#        'weapon': weapon,
+#        'game_mode': self.game_mode,
+#        'current_ship': self.active_ship["current"],
+#        'client_ver': self.local_version,
+#        'anonymize_state': {'enabled': False }
+#    }
+#}
+#
+# Current user killed other player
+#{
+#    "result": "killer",
+#    "data": {
+#        "discord_id": self.discord_id["current"],
+#        "player": curr_user,
+#        "victim": killed,
+#        "time": "<2025-10-02T22:57:03.975Z>",
+#        "zone": zone,
+#        "weapon": weapon,
+#        "game_mode": self.game_mode,
+#        "current_ship": self.active_ship["current"],
+#        "client_ver": self.local_version,
+#        "anonymize_state": {'enabled': False }
+#     }
+#}
+def process_kill(result:str, details:object, store_in_db:bool):
+    discord_id = details.get("discord_id")
+    player = details.get("player")
+    victim = details.get("victim")
+    kill_time = details.get("time") # kill_time is formatted something like "<2025-10-02T22:57:03.975Z>" convert it to a datetime object
+    if kill_time:
+        kill_time = kill_time.strip("<>")
+        kill_time = datetime.strptime(kill_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+    zone = details.get("zone")
+    weapon = details.get("weapon")
+    game_mode = details.get("game_mode")
+    client_ver = details.get("client_ver")
+    current_ship = details.get("current_ship")
+    anonymize_state = details.get("anonymize_state")
+    if(anonymize_state.get("enabled")):
+        logger.info("Reporting anonymized kill")
+        discord_id = "[BWC]"
+        player = "[BWC]"
+
+    weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
+
+    success = True
+    if result == "killer":
+        channel = None
+
+        # ------------------------------------------------------------------------------------------
+        # Record kill in database
+        # ------------------------------------------------------------------------------------------
+        if store_in_db:
+            channel = bot.get_channel(CHANNEL_SC_PUBLIC)
+            logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                        """
+                        INSERT INTO kill_feed (discord_id, rsi_handle, victim, weapon, zone, current_ship, game_mode, time_stamp, client_ver)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (discord_id, player, victim, weapon, zone, current_ship, game_mode, kill_time, client_ver)
+                    )
+                conn.commit()
+            except mysql.connector.Error as err:
+                logger.error(f"Error recording kill in database: {err}")
+                success = False
+            except Exception as e:
+                logger.error(f"Unexpected error recording kill in database: {e}")
+                success = False
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+        else:
+            channel = bot.get_channel(CHANNEL_TEST_SERVER_PUBLIC)
+            logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
+
+        # ------------------------------------------------------------------------------------------
+        # Announce kill in Discord
+        # ------------------------------------------------------------------------------------------
+        if game_mode == "SC_Default" and success and channel:
+            try:
+                # Record kill in memory used to track kill streaks and multi-kills
+                now = datetime.utcnow().timestamp()
+                g_kill_timestamps[discord_id].append(now)
+                g_kill_streaks[discord_id] += 1
+
+                bwc_name = get_bwc_name(discord_id, False, player) # Reassign bwc_name to how their name is formatted in Discord. Using their discord_id. Fallback to their RSI handle if not found
+
+                victim_link = f"[{victim}](https://robertsspaceindustries.com/citizens/{victim})"
+                kill_message = f"> **{bwc_name}** killed ☠️ **{victim_link}** ☠️ using {weapon_human_readable}"
+
+                # Kill streaks
+                if g_kill_streaks[discord_id] == 50:
+                    kill_message += f"\n 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"
+                elif g_kill_streaks[discord_id] == 20:
+                    kill_message += f"\n 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"
+                elif g_kill_streaks[discord_id] == 10:
+                    kill_message += f"\n 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"
+                elif g_kill_streaks[discord_id] == 5:
+                    kill_message += f"\n 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"
+                elif g_kill_streaks[discord_id] == 3:
+                    kill_message += f"\n 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"
+
+                # Clean up any kills that are older than 60 seconds
+                g_kill_timestamps[discord_id] = [t for t in g_kill_timestamps[discord_id] if now - t <= 60]
+
+                # Chain Multiple kills
+                if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
+                    kill_message += "\n ⚡⚡⚡⚡⚡⚡ Killimanjaro! ⚡⚡⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
+                    kill_message += "\n ⚡⚡⚡⚡⚡ Killtacular! ⚡⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
+                    kill_message += "\n ⚡⚡⚡⚡ OverKill! ⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
+                    kill_message += "\n ⚡⚡⚡ Triple Kill! ⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
+                    kill_message += "\n ⚡⚡ Double Kill! ⚡⚡"
+
+                # Send kill announcement
+                asyncio.run_coroutine_threadsafe(
+                    channel.send(kill_message),
+                    bot.loop
+                )
+
+                # Milestones
+                total_kills = db_total_kills(discord_id)
+                if total_kills > 0 and total_kills % 50 == 0:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send(f"> 🏆 {bwc_name} reached **{total_kills} kills!**"),
+                        bot.loop
+                    )
+            except Exception as e:
+                logger.error(f"Unexpected error sending kill announcement: {e}")
+    elif result == "killed":
+        g_kill_streaks[discord_id] = 0
+        logger.info(f"Reporting killed player: {victim} with ship {current_ship} playing {game_mode}, killed by {player} with {weapon} in {zone}")
+    elif result == "suicide":
+        g_kill_streaks[discord_id] = 0
+        logger.info(f"Reporting suicide: {victim} with ship {current_ship} playing {game_mode}, died by {weapon} in {zone}")
+    else:
+        logger.warning(f"Unhandled kill result type: {result}")
+        success = False
+    return success
 
 # ---------------------------------------------------------------------------
 # Main

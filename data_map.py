@@ -64,6 +64,9 @@ weaponMapping = {
     "VNCL_LaserCannon_S2": "S2 WASP Repeater",
     "VNCL_PlasmaCannon_S3": "S3 WARLORD Cannon",
     "VNCL_PlasmaCannon_S5": "S5 WRATH Cannon",
+    # Tank Weapons
+    "HRST_Nova_BallisticCannon_S5": "Kentucky windage",
+    "HRST_Storm_LaserRepeater_S3": "Pee Shooter",
     # FPS weapons
     # Melee
     "none_melee_01": "Dropped the Soap",
@@ -135,7 +138,8 @@ weaponMapping = {
     "ksar_shotgun_energy_01": "Devastator Shotgun",
     # S71 Rifle
     "gmni_rifle_ballistic_01": "S71 Rifle",
-    "gmni_rifle_ballistic_01_firerats01": "S71 Bullseye",
+    "gmni_rifle_ballistic_01_firerats01": "S71 Bullseye Rifle",
+    "gmni_rifle_ballistic_01_firerats02": "S71 Scorched Rifle",
     # Pistols
     "gmni_pistol_ballistic_01": "LH86 Pistol",
     "gmni_pistol_ballistic_01_blue_white01": "LH86 Pistol Permafrost",
@@ -192,9 +196,6 @@ weaponMapping = {
     "ksar_smg_energy_01_black01": "Custodian SMG",
     # Deadrig Shotgun
     "none_shotgun_ballistic_01": "Deadrig shotgun (maybe?)",
-    # Tank Weapons
-    "HRST_Nova_BallisticCannon_S5": "Kentucky windage",
-    "HRST_Storm_LaserRepeater_S3": "Pee Shooter",
     # Special Weapons
     "apar_special_ballistic_01": "Railgun",
     "apar_special_ballistic_02": "Animus Missile Launcher",
