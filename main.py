@@ -222,10 +222,10 @@ async def cmd_total_kills(ctx, discord_id:str=""):
         total_kills = pu_fps_kills + pu_ship_kills + ac_fps_kills + ac_ship_kills
         bwc_name = get_bwc_name(discord_id, False)
         message = f"✅ {bwc_name} has a total of {total_kills} recorded kills:\n"
-        message += f"> PU FPS Kills: `{pu_fps_kills}`\n"
-        message += f"> PU Ship Kills: `{pu_ship_kills}`\n"
-        message += f"> AC FPS Kills: `{ac_fps_kills}`\n"
-        message += f"> AC Ship Kills: `{ac_ship_kills}`"
+        message += f"> PU Infantry Kills: `{pu_fps_kills}`\n"
+        message += f"> PU Vehicle Kills: `{pu_ship_kills}`\n"
+        message += f"> AC Infantry Kills: `{ac_fps_kills}`\n"
+        message += f"> AC Vehicle Kills: `{ac_ship_kills}`"
         await ctx.send(message)
 
 @cmd_total_kills.error
@@ -911,9 +911,9 @@ async def post_weekly_tally(channel_id:int):
     embed_var.set_author(name="GrimReaperBot", icon_url="https://media.discordapp.net/attachments/1079475596314280066/1427308241796333691/5ae5886122e57b7510cc31a69b9b2dca.png?ex=68ee63e2&is=68ed1262&hm=fb4fd804a994eb6ec1d7c6b62bb55a877441934ae273e2f05816a51be9ff2e51&=&format=webp&quality=lossless")
 
     pu_total_desc = f"**Total PU Kills:** `{pu_fps_total_kills + pu_ship_total_kills}`\n"
-    pu_total_desc += f"> FPS kills: `{pu_fps_total_kills}`\n"
-    pu_total_desc += f"> Ship kills: `{pu_ship_total_kills}`\n\u3164"
-    pu_total_desc += "\n**Top FPS Weapons:**\n"
+    pu_total_desc += f"> Infantry kills: `{pu_fps_total_kills}`\n"
+    pu_total_desc += f"> Vehicle kills: `{pu_ship_total_kills}`\n\u3164"
+    pu_total_desc += "\n**Top Infantry Weapons:**\n"
     sorted_pu_fps_weapons = sorted(pu_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_pu_fps_weapons[:3]: # Limit to 3
@@ -922,7 +922,7 @@ async def post_weekly_tally(channel_id:int):
         pad_count -= 1
     for _ in range(pad_count):
         pu_total_desc += f"> \u3164\n"
-    pu_total_desc += "\n**Top Ship Weapons:**\n"
+    pu_total_desc += "\n**Top Vehicle Weapons:**\n"
     sorted_pu_ship_weapons = sorted(pu_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_pu_ship_weapons[:3]: # Limit to 3
@@ -931,7 +931,7 @@ async def post_weekly_tally(channel_id:int):
         pad_count -= 1
     for _ in range(pad_count):
         pu_total_desc += f"> \u3164\n"
-    pu_total_desc += "\n**Top Ships:**\n"
+    pu_total_desc += "\n**Top Vehicles:**\n"
     sorted_pu_ship_curships = sorted(pu_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for ship, count in sorted_pu_ship_curships[:3]: # Limit to 3
@@ -946,9 +946,9 @@ async def post_weekly_tally(channel_id:int):
     embed_var.add_field(name="🚀 Persistent Universe", value=pu_total_desc, inline=True)
 
     ac_total_desc = f"**Total AC Kills:** `{ac_fps_total_kills + ac_ship_total_kills}`\n"
-    ac_total_desc += f"> FPS kills: `{ac_fps_total_kills}`\n"
-    ac_total_desc += f"> Ship kills: `{ac_ship_total_kills}`\n\u3164"
-    ac_total_desc += "\n**Top FPS Weapons:**\n"
+    ac_total_desc += f"> Infantry kills: `{ac_fps_total_kills}`\n"
+    ac_total_desc += f"> Vehicle kills: `{ac_ship_total_kills}`\n\u3164"
+    ac_total_desc += "\n**Top Infantry Weapons:**\n"
     sorted_ac_fps_weapons = sorted(ac_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_ac_fps_weapons[:3]: # Limit to 3
@@ -957,7 +957,7 @@ async def post_weekly_tally(channel_id:int):
         pad_count -= 1
     for _ in range(pad_count):
         ac_total_desc += f"> \u3164\n"
-    ac_total_desc += "\n**Top Ship Weapons:**\n"
+    ac_total_desc += "\n**Top Vehicle Weapons:**\n"
     sorted_ac_ship_weapons = sorted(ac_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_ac_ship_weapons[:3]: # Limit to 3
@@ -966,7 +966,7 @@ async def post_weekly_tally(channel_id:int):
         pad_count -= 1
     for _ in range(pad_count):
         ac_total_desc += f"> \u3164\n"
-    ac_total_desc += "\n**Top Ships:**\n"
+    ac_total_desc += "\n**Top Vehicles:**\n"
     sorted_ac_ship_curships = sorted(ac_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for ship, count in sorted_ac_ship_curships[:3]: # Limit to 3
@@ -982,7 +982,7 @@ async def post_weekly_tally(channel_id:int):
 
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
-    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - FPS Combat** ~~-----~~", inline=True)
+    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - Infantry** ~~-----~~", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
@@ -1022,7 +1022,7 @@ async def post_weekly_tally(channel_id:int):
 
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
-    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - Ship Combat** ~~-----~~", inline=True)
+    embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - Vehicle** ~~-----~~", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
