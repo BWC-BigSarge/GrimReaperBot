@@ -211,16 +211,29 @@ async def on_ready():
 async def cmd_total_kills(ctx, discord_id:str=""):
     if discord_id == "":
         discord_id = str(ctx.author.id)
-    total_kills = db_total_kills(discord_id)
-    bwc_name = get_bwc_name(discord_id, False)
-    if total_kills >= 0:
-        await ctx.send(f"✅ {bwc_name} has a total of {total_kills} recorded kills.")
-    else:
+    kill_buckets = db_get_kill_buckets("WHERE discord_id = %s", (discord_id,))
+    if kill_buckets == {}:
         await ctx.send("❌ Unable to retrieve your kill count.")
+    else:
+        pu_fps_kills = len(kill_buckets['PU_FPS'])
+        pu_ship_kills = len(kill_buckets['PU_Ship'])
+        ac_fps_kills = len(kill_buckets['AC_FPS'])
+        ac_ship_kills = len(kill_buckets['AC_Ship'])
+        total_kills = pu_fps_kills + pu_ship_kills + ac_fps_kills + ac_ship_kills
+        bwc_name = get_bwc_name(discord_id, False)
+        message = f"✅ {bwc_name} has a total of {total_kills} recorded kills:\n"
+        message += f"> PU FPS Kills: `{pu_fps_kills}`\n"
+        message += f"> PU Ship Kills: `{pu_ship_kills}`\n"
+        message += f"> AC FPS Kills: `{ac_fps_kills}`\n"
+        message += f"> AC Ship Kills: `{ac_ship_kills}`"
+        await ctx.send(message)
 
 @cmd_total_kills.error
 async def cmd_total_kills_error(ctx, error):
-    await ctx.send("❌ An error occurred while processing your request.")
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You do not have permission to run this command.")
+    else:
+        await ctx.send("❌ An error occurred while processing your request.")
 
 # ---------------------------------------------------------------------------
 
@@ -486,27 +499,52 @@ def should_task_run(task_name:str, interval_days:int = 7):
     logger.info("TASK LOOP - should_task_run() returning False")
     return False
 
-def db_total_kills(discord_id:str) -> int: # Returns -1 on error, or total kills if successful
+def db_get_kill_buckets(sql_where_query:str="", sql_where_params:tuple=()) -> dict:
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM kill_feed WHERE discord_id = %s", (discord_id,))
-        ret = cursor.fetchone()
-        if ret:
-            total = ret[0]
-            return total
+
+        sql_query = """
+            SELECT discord_id, victim, weapon, current_ship, zone, game_mode
+            FROM kill_feed 
+            """ + sql_where_query
+
+        cursor.execute(sql_query, sql_where_params)
+        kill_list = cursor.fetchall() # List of tuples (discord_id, victim, weapon, current_ship, zone, game_mode)
+
+        # Sort into 4 buckets based on PU vs AC and weapon type (FPS vs Ship)
+        kill_buckets = {
+            'PU_FPS': [],
+            'PU_Ship': [],
+            'AC_FPS': [],
+            'AC_Ship': []
+        }
+        for discord_id, victim, weapon, current_ship, zone, game_mode in kill_list:
+            is_ac = game_mode != 'SC_Default'
+            is_ship = False
+            if weapon.split('_')[0].isupper(): # If the first part of weapon up to the first underscore is in all capital letters, consider it a ship weapon
+                is_ship = True
+
+            if is_ac and is_ship:
+                kill_buckets['AC_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            elif is_ac and not is_ship:
+                kill_buckets['AC_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            elif not is_ac and is_ship:
+                kill_buckets['PU_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+            else:
+                kill_buckets['PU_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+        return kill_buckets
     except mysql.connector.Error as err:
-        logger.error(f"Database error in total_kills: {err}")
-        return -1
+        logger.error(f"Database error in db_get_kill_buckets: {err}")
+        return {}
     except Exception as e:
-        logger.error(f"Unexpected error in total_kills: {e}")
-        return -1
+        logger.error(f"Unexpected error in db_get_kill_buckets: {e}")
+        return {}
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-    return -1
 
 # ---------------------------------------------------------------------------
 # API Server for Website Requests
@@ -799,36 +837,7 @@ async def post_weekly_tally(channel_id:int):
             return
 
         # Get kills from the past week from the kill_feed table
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT discord_id, victim, weapon, current_ship, zone, game_mode
-            FROM kill_feed
-            WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]'
-            """)
-        weekly_kill_list = cursor.fetchall() # List of tuples (discord_id, victim, weapon, current_ship, zone, game_mode)
-
-        # Sort into 4 buckets based on PU vs AC and weapon type (FPS vs Ship)
-        kill_buckets = {
-            'PU_FPS': [],
-            'PU_Ship': [],
-            'AC_FPS': [],
-            'AC_Ship': []
-        }
-        for discord_id, victim, weapon, current_ship, zone, game_mode in weekly_kill_list:
-            is_ac = game_mode != 'SC_Default'
-            is_ship = False
-            if weapon.split('_')[0].isupper(): # If the first part of weapon up to the first underscore is in all capital letters, consider it a ship weapon
-                is_ship = True
-
-            if is_ac and is_ship:
-                kill_buckets['AC_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
-            elif is_ac and not is_ship:
-                kill_buckets['AC_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
-            elif not is_ac and is_ship:
-                kill_buckets['PU_Ship'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
-            else:
-                kill_buckets['PU_FPS'].append((discord_id, victim, weapon, current_ship, zone, game_mode))
+        kill_buckets = db_get_kill_buckets("WHERE time_stamp >= NOW() - INTERVAL 7 DAY AND discord_id != '[BWC]'")
 
         pu_fps_total_kills = len(kill_buckets['PU_FPS'])
         pu_fps_weapon_usage = {}
@@ -891,18 +900,10 @@ async def post_weekly_tally(channel_id:int):
                 ac_ship_member_kills[discord_id] += 1
             else:
                 ac_ship_member_kills[discord_id] = 1
-
-    except mysql.connector.Error as err:
-        logger.error(f"Database error in post_weekly_tally: {err}")
-        return
     except Exception as e:
-        logger.error(f"Unexpected error in post_weekly_tally: {e}")
+        logger.error(f"Error generating weekly tally data: {e}")
         return
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    
 
     # Create an embed message (NOTE: every third `embed_var.add_field()` is blank to create a 2 column format)
     embed_desc = "Black Widow Company's Star Citizen kill report from **" + (datetime.utcnow() - timedelta(days=7)).strftime("%B %d") + "** to **" + datetime.utcnow().strftime("%B %d") + "**\n\u3164"
@@ -1223,9 +1224,13 @@ def process_kill(result:str, details:object, store_in_db:bool):
                     kill_message += "\n ⚡⚡ Double Kill! ⚡⚡"
 
                 # Milestones
-                total_kills = db_total_kills(discord_id)
-                if total_kills > 0 and total_kills % 50 == 0:
-                    kill_message += f"\n 🏆 {bwc_name} reached **{total_kills} total kills!** 🏆\n"
+                kill_buckets = db_get_kill_buckets("WHERE discord_id = %s", (discord_id,))
+                if not kill_buckets == {}:
+                    total_kills = 0
+                    total_kills += len(kill_buckets['PU_FPS'])
+                    total_kills += len(kill_buckets['PU_Ship'])
+                    if total_kills > 0 and total_kills % 50 == 0:
+                        kill_message += f"\n 🏆 {bwc_name} reached **{total_kills} total PU kills!** 🏆\n"
 
                 # Send kill announcement
                 asyncio.run_coroutine_threadsafe(
