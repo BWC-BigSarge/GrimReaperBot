@@ -798,7 +798,7 @@ async def post_weekly_tally(channel_id:int):
             logger.error(f"Post Weekly Tally Channel (ID: {channel_id}) not found.")
             return
 
-        # Get kills from the past week from the kill_feed table, by counting number of rows with discord_id and time_stamp column
+        # Get kills from the past week from the kill_feed table
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -909,15 +909,15 @@ async def post_weekly_tally(channel_id:int):
     embed_var = discord.Embed(title="Weekly Kill Tally", color=0xff0000, description=embed_desc, timestamp=datetime.utcnow())
     embed_var.set_author(name="GrimReaperBot", icon_url="https://media.discordapp.net/attachments/1079475596314280066/1427308241796333691/5ae5886122e57b7510cc31a69b9b2dca.png?ex=68ee63e2&is=68ed1262&hm=fb4fd804a994eb6ec1d7c6b62bb55a877441934ae273e2f05816a51be9ff2e51&=&format=webp&quality=lossless")
 
-    pu_total_desc = f"- **{pu_fps_total_kills + pu_ship_total_kills}** total kills recorded\n"
-    pu_total_desc += f"> **{pu_fps_total_kills}** FPS kills\n"
-    pu_total_desc += f"> **{pu_ship_total_kills}** Ship kills\n\u3164"
+    pu_total_desc = f"**Total PU Kills:** `{pu_fps_total_kills + pu_ship_total_kills}`\n"
+    pu_total_desc += f"> FPS kills: `{pu_fps_total_kills}`\n"
+    pu_total_desc += f"> Ship kills: `{pu_ship_total_kills}`\n\u3164"
     pu_total_desc += "\n**Top FPS Weapons:**\n"
     sorted_pu_fps_weapons = sorted(pu_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_pu_fps_weapons[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
-        pu_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pu_total_desc += f"> {weapon_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         pu_total_desc += f"> \u3164\n"
@@ -926,7 +926,7 @@ async def post_weekly_tally(channel_id:int):
     pad_count = 3
     for weapon, count in sorted_pu_ship_weapons[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
-        pu_total_desc += f"> {weapon_human_readable}: {count}\n"
+        pu_total_desc += f"> {weapon_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         pu_total_desc += f"> \u3164\n"
@@ -937,22 +937,22 @@ async def post_weekly_tally(channel_id:int):
         ship_human_readable = convert_string(data_map.vehicleMapping, ship, fuzzy_search=False)
         if ship_human_readable == "FPS":
             ship_human_readable = "Undetermined"
-        pu_total_desc += f"> {ship_human_readable}: {count}\n"
+        pu_total_desc += f"> {ship_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         pu_total_desc += f"> \u3164\n"
     #pu_total_desc += "\n\u3164"
     embed_var.add_field(name="🚀 Persistent Universe", value=pu_total_desc, inline=True)
 
-    ac_total_desc = f"- **{ac_fps_total_kills + ac_ship_total_kills}** total kills recorded\n"
-    ac_total_desc += f"> **{ac_fps_total_kills}** FPS kills\n"
-    ac_total_desc += f"> **{ac_ship_total_kills}** Ship kills\n\u3164"
+    ac_total_desc = f"**Total AC Kills:** `{ac_fps_total_kills + ac_ship_total_kills}`\n"
+    ac_total_desc += f"> FPS kills: `{ac_fps_total_kills}`\n"
+    ac_total_desc += f"> Ship kills: `{ac_ship_total_kills}`\n\u3164"
     ac_total_desc += "\n**Top FPS Weapons:**\n"
     sorted_ac_fps_weapons = sorted(ac_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
     pad_count = 3
     for weapon, count in sorted_ac_fps_weapons[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
-        ac_total_desc += f"> {weapon_human_readable}: {count}\n"
+        ac_total_desc += f"> {weapon_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         ac_total_desc += f"> \u3164\n"
@@ -961,7 +961,7 @@ async def post_weekly_tally(channel_id:int):
     pad_count = 3
     for weapon, count in sorted_ac_ship_weapons[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, fuzzy_search=False)
-        ac_total_desc += f"> {weapon_human_readable}: {count}\n"
+        ac_total_desc += f"> {weapon_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         ac_total_desc += f"> \u3164\n"
@@ -972,7 +972,7 @@ async def post_weekly_tally(channel_id:int):
         ship_human_readable = convert_string(data_map.vehicleMapping, ship, fuzzy_search=False)
         if ship_human_readable == "FPS":
             ship_human_readable = "Undetermined"
-        ac_total_desc += f"> {ship_human_readable}: {count}\n"
+        ac_total_desc += f"> {ship_human_readable}: `{count}`\n"
         pad_count -= 1
     for _ in range(pad_count):
         ac_total_desc += f"> \u3164\n"
@@ -982,7 +982,7 @@ async def post_weekly_tally(channel_id:int):
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
     embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - FPS Combat** ~~-----~~", inline=True)
-    embed_var.add_field(name="\u200b", value="~~---------------------------------~~", inline=True)
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
     pu_top10_desc = ""
@@ -1022,7 +1022,7 @@ async def post_weekly_tally(channel_id:int):
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
     embed_var.add_field(name="\u200b", value="~~-----~~ **Top 10 - Ship Combat** ~~-----~~", inline=True)
-    embed_var.add_field(name="\u200b", value="~~---------------------------------~~", inline=True)
+    embed_var.add_field(name="\u200b", value="\u200b", inline=True)
     embed_var.add_field(name="\u200b", value="\u200b", inline=True)
 
     pu_ship_top10_desc = ""
