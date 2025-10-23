@@ -16,6 +16,7 @@ from waitress import serve
 import threading
 import secrets
 from fuzzywuzzy import fuzz
+import json
 
 import data_map # Human readable mappings for various log entries
 
@@ -157,7 +158,7 @@ async def on_ready():
                 CREATE TABLE IF NOT EXISTS api_keys (
                     discord_id VARCHAR(24) PRIMARY KEY,
                     api_key VARCHAR(42) NOT NULL,
-                    rsi_handle VARCHAR(42),
+                    rsi_handle JSON,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     status VARCHAR(32) DEFAULT 'active'
                 )
@@ -382,6 +383,49 @@ def set_api_status(ctx, discord_id:str, new_status:str):
         if conn:
             conn.close()
 
+def update_rsi_handles(player_name, discord_id, db_rsi_handle):
+    """ Find and update rsi_handle column of api_keys database if 'player_name' is not found """
+    if not player_name:
+        return
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        db_rsi_handle = json.loads(db_rsi_handle) # Convert db_rsi_handle to valid string from bytes since it was pulled from DB
+
+        rsi_handles = []
+        if db_rsi_handle:
+            if isinstance(db_rsi_handle, list):
+                rsi_handles = db_rsi_handle
+                if player_name not in rsi_handles:
+                    rsi_handles.append(player_name)
+                    rsi_handles = json.dumps(rsi_handles)
+                    logger.info(f"Adding new RSI handle '{player_name}' to existing RSI handles for Discord ID {discord_id}")
+                    cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE discord_id = %s", (rsi_handles, discord_id))
+                    conn.commit()
+            else:
+                # Convert single string to array
+                rsi_handles.append(player_name)
+                rsi_handles = json.dumps(rsi_handles)
+                logger.info(f"Converting RSI handle to array and adding new RSI handle '{player_name}' for Discord ID {discord_id}")
+                cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE discord_id = %s", (rsi_handles, discord_id))
+                conn.commit()
+        else:
+            rsi_handles.append(player_name)
+            rsi_handles = json.dumps(rsi_handles)
+            logger.info(f"Setting RSI handle '{player_name}' for Discord ID {discord_id}")
+            cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE discord_id = %s", (rsi_handles, discord_id))
+            conn.commit()
+    except mysql.connector.Error as err:
+        logger.error(f"Database error in update_rsi_handles: {err}")
+    except Exception as e:
+        logger.error(f"Unexpected error in update_rsi_handles: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> str:
     """ Reassign bwc_name to how their name is formatted in Discord. Using their discord_id """
     if discord_id == DISCORD_ID_TEST:
@@ -427,7 +471,9 @@ def get_bwc_name(discord_id:str, ping_user=False, fallback_name="Unknown") -> st
             cursor.execute("SELECT rsi_handle FROM api_keys WHERE discord_id = %s", (discord_id,))
             ret = cursor.fetchone()
             if ret and ret[0]:
-                bwc_name = ret[0]
+                rsi_handle_list = json.loads(ret[0]) # Convert ret[0] to valid list from bytes since it was pulled from DB
+                if isinstance(rsi_handle_list, list):
+                    bwc_name = rsi_handle_list[0]
         except mysql.connector.Error as err:
             logger.error(f"Database error in get_bwc_name fetching rsi_handle: {err}")
         except Exception as e:
@@ -635,7 +681,7 @@ def validate_key():
         logger.error(f"Unexpected error in validate_key: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
-    # Determine if API key exists, then update rsi_handle if needed
+    # Determine if API key exists, then update rsi_handle if 'player_name' is not found
     try:
         dicord_id = None
         rsi_handle = None
@@ -645,9 +691,9 @@ def validate_key():
         ret = cursor.fetchone()
         if ret:
             discord_id, rsi_handle, created_at, status = ret
-            if player_name and rsi_handle != player_name:
-                cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
-                conn.commit()
+
+            update_rsi_handles(player_name, discord_id, rsi_handle)
+
             if status == STATUS_Active:
                 # Check if key is expired
                 if created_at < datetime.utcnow() - EXPIRATION_DURATION:
@@ -709,9 +755,9 @@ def get_expiration():
         ret = cursor.fetchone()
         if ret:
             discord_id, rsi_handle, created_at, status = ret
-            if player_name and rsi_handle != player_name:
-                cursor.execute("UPDATE api_keys SET rsi_handle = %s WHERE api_key = %s", (player_name, api_key))
-                conn.commit()
+
+            update_rsi_handles(player_name, discord_id, rsi_handle)
+
             if status == STATUS_Active:
                 # Check if key is expired
                 if created_at < datetime.utcnow() - EXPIRATION_DURATION:
@@ -1198,30 +1244,30 @@ def process_kill(result:str, details:object, store_in_db:bool):
 
                 # Kill streaks
                 if g_kill_streaks[discord_id] == 50:
-                    kill_message += f"\n 🔥🔥🔥🔥🔥 **{bwc_name}** is on a **50-kill streak!** 🔥🔥🔥🔥🔥"
+                    kill_message += f"\n 🔥🔥🔥🔥🔥 **50-kill streak!** 🔥🔥🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 20:
-                    kill_message += f"\n 🔥🔥🔥🔥 **{bwc_name}** is on a **20-kill streak!** 🔥🔥🔥🔥"
+                    kill_message += f"\n 🔥🔥🔥🔥 **20-kill streak!** 🔥🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 10:
-                    kill_message += f"\n 🔥🔥🔥 **{bwc_name}** is on a **10-kill streak!** 🔥🔥🔥"
+                    kill_message += f"\n 🔥🔥🔥 **10-kill streak!** 🔥🔥🔥"
                 elif g_kill_streaks[discord_id] == 5:
-                    kill_message += f"\n 🔥🔥 **{bwc_name}** is on a **5-kill streak!** 🔥🔥"
+                    kill_message += f"\n 🔥🔥 **5-kill streak!** 🔥🔥"
                 elif g_kill_streaks[discord_id] == 3:
-                    kill_message += f"\n 🔥 **{bwc_name}** is on a **3-kill streak!** 🔥"
+                    kill_message += f"\n 🔥 **3-kill streak!** 🔥"
 
-                # Clean up any kills that are older than 60 seconds
-                g_kill_timestamps[discord_id] = [t for t in g_kill_timestamps[discord_id] if now - t <= 60]
+                # Clean up any kills that are older than 75 seconds
+                g_kill_timestamps[discord_id] = [t for t in g_kill_timestamps[discord_id] if now - t <= 75]
 
                 # Chain Multiple kills
-                if len([t for t in g_kill_timestamps[discord_id] if now - t <= 50]) >= 6:
-                    kill_message += "\n ⚡⚡⚡⚡⚡⚡ Killimanjaro! ⚡⚡⚡⚡⚡⚡"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 40]) >= 5:
-                    kill_message += "\n ⚡⚡⚡⚡⚡ Killtacular! ⚡⚡⚡⚡⚡"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 4:
-                    kill_message += "\n ⚡⚡⚡⚡ OverKill! ⚡⚡⚡⚡"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 20]) >= 3:
-                    kill_message += "\n ⚡⚡⚡ Triple Kill! ⚡⚡⚡"
-                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 10]) >= 2:
-                    kill_message += "\n ⚡⚡ Double Kill! ⚡⚡"
+                if len([t for t in g_kill_timestamps[discord_id] if now - t <= 75]) >= 6:
+                    kill_message += "\n ⚡⚡⚡⚡⚡⚡ **Killimanjaro!** ⚡⚡⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 60]) >= 5:
+                    kill_message += "\n ⚡⚡⚡⚡⚡ **Killtacular!** ⚡⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 45]) >= 4:
+                    kill_message += "\n ⚡⚡⚡⚡ **OverKill!** ⚡⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 30]) >= 3:
+                    kill_message += "\n ⚡⚡⚡ **Triple Kill!** ⚡⚡⚡"
+                elif len([t for t in g_kill_timestamps[discord_id] if now - t <= 15]) >= 2:
+                    kill_message += "\n ⚡⚡ **Double Kill!** ⚡⚡"
 
                 # Milestones
                 kill_buckets = db_get_kill_buckets("WHERE discord_id = %s", (discord_id,))

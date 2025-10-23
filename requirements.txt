@@ -2,6 +2,7 @@ discord.py
 python-dotenv
 aiohttp
 apscheduler
+asyncio
 sqlalchemy
 mysql.connector
 flask
