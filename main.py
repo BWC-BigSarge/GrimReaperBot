@@ -41,8 +41,9 @@ ROLE_SC = 480372006806618114
 ROLE_TEST_ADMIN = 1427357824597360671
 
 CHANNEL_SC_PUBLIC = 480367983558918174
+CHANNEL_SC_KILLSPAM = 1431102352563114105
 CHANNEL_SC_ANNOUNCEMENTS = 827312889890471957
-CHANNEL_TEST_SERVER_PUBLIC = 1420804944075689994
+CHANNEL_TEST_SERVER = 1420804944075689994
 
 DISCORD_ID_TEST = "123456789012345678"
 
@@ -322,7 +323,7 @@ async def cmd_test_kill_error(ctx, error):
 @commands.has_role(ROLE_TEST_ADMIN)
 async def cmd_test_tally(ctx):
     """Test weekly tally embed"""
-    await post_weekly_tally(CHANNEL_TEST_SERVER_PUBLIC)
+    await post_weekly_tally(CHANNEL_TEST_SERVER)
 
 @cmd_test_tally.error
 async def cmd_test_tally_error(ctx, error):
@@ -1199,7 +1200,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
         # Record kill in database
         # ------------------------------------------------------------------------------------------
         if store_in_db:
-            channel = bot.get_channel(CHANNEL_SC_PUBLIC)
+            channel = bot.get_channel(CHANNEL_SC_KILLSPAM)
             logger.info(f"Recording DB kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
             try:
                 conn = get_connection()
@@ -1224,7 +1225,7 @@ def process_kill(result:str, details:object, store_in_db:bool):
                 if conn:
                     conn.close()
         else:
-            channel = bot.get_channel(CHANNEL_TEST_SERVER_PUBLIC)
+            channel = bot.get_channel(CHANNEL_TEST_SERVER)
             logger.info(f"Test kill: {player} killed {victim} with {weapon} in {zone} with ship {current_ship} playing {game_mode}")
 
         # ------------------------------------------------------------------------------------------
