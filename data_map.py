@@ -70,7 +70,7 @@ weaponMapping = {
     # FPS weapons
     # Melee
     "none_melee_01": "Dropped the Soap",
-    "utfl_melee_01_red01_gungame": "I WON GUN GAME",
+    "utfl_melee_01_red01_gungame": "I WON GUN RUSH",
     "utfl_melee_01_gungame": "FSK-8 Combat Knife",
     # C54 SMG
     "gmni_smg_ballistic_01": "C54 SMG",
@@ -90,6 +90,7 @@ weaponMapping = {
     "behr_smg_ballistic_01_white01": "P8-SC Stormfall",
     "behr_smg_ballistic_01_green01": "P8-SC  Warhawk",
     # P8-AR
+    "behr_rifle_ballistic_02": "P8-AR",
     "behr_rifle_ballistic_02_civilian": "P8-AR",
     "behr_rifle_ballistic_01_spc_01": "P8-AR",
     "behr_rifle_ballistic_02_civilian_black01": "P8-AR",
@@ -129,13 +130,13 @@ weaponMapping = {
     "klwe_lmg_energy_01_purple_blue01": "Demeco Purple LMG",
     "klwe_lmg_energy_01_iae2201": "Demeco IAE LMG",
     # F55 LMG
-    "gmni_lmg_ballistic_01_blue_gold": "F55 LMG",
     "gmni_lmg_ballistic_01": "F55 LMG",
+    "gmni_lmg_ballistic_01_blue_gold": "F55 LMG",
     "gmni_lmg_ballistic_01_green_red01": "Christmas F55 LMG",
     "gmni_lmg_ballistic_01_firerats01": "Scorched F55 LMG",
     # Devastator Shotgun
-    "ksar_shotgun_energy_01_gold01": "Devastator Executive Shotgun",
     "ksar_shotgun_energy_01": "Devastator Shotgun",
+    "ksar_shotgun_energy_01_gold01": "Devastator Executive Shotgun",
     # S71 Rifle
     "gmni_rifle_ballistic_01": "S71 Rifle",
     "gmni_rifle_ballistic_01_firerats01": "S71 Bullseye Rifle",
@@ -300,15 +301,15 @@ vehicleMapping = {
     "ANVL_Hornet_F7CR_Mk2": "Hornet F7C MKII",
     "ANVL_Hornet_F7CM_Mk2":"Hornet F7CM MKII",
     "ANVL_Hornet_F7CM_Heartseeker": "Hornet F7CM Heartseeker MKI",
-    "ANVL_Hornet_F7A_Mk2_Exec_Stealth":"Hornet F7A MKII Exectutive Stealth Build",
-    "ANVL_Hornet_F7A_Mk2_Exec_Military":"Hornet F7A MKII Excectutive Military Build",
+    "ANVL_Hornet_F7A_Mk2_Exec_Stealth":"Hornet F7A MKII Exec. Stealth",
+    "ANVL_Hornet_F7A_Mk2_Exec_Military":"Hornet F7A MKII Exec. Military",
     "ANVL_Hornet_F7C_Wildfire":"F7C Hornet MKI Wildfire ",
     "ANVL_Hornet_F7CS_Mk1": "Hornet F7CS MKI Ghost",
     "ANVL_Hornet_F7CS_Mk2": "Hornet F7CS MKII Ghost",
     "ANVL_Hornet_F7CS": "Hornet F7C-S MKI Ghost ",
     "ANVL_Lightning_F8C": "F8C Lightning",
-    "ANVL_Lightning_F8C_Exec":"F8C Lightning Executive",
-    "ANVL_Lightning_F8C_Exec_Stealth": "F8C Lighting Executive Stealth",
+    "ANVL_Lightning_F8C_Exec":"F8C Lightning Exec.",
+    "ANVL_Lightning_F8C_Exec_Stealth": "F8C Lighting Exec. Stealth",
     "ANVL_Gladiator":"Gladiator",
     "ANVL_Valkyrie": "Valkyrie",
     "ANVL_Hawk": "Hawk",
@@ -341,13 +342,13 @@ vehicleMapping = {
     "DRAK_Caterpillar": "Caterpillar",
     "DRAK_Caterpillar_Pirate": "Caterpillar Pirate",
     "DRAK_Corsair": "Corsair",
-    "DRAK_Corsair_Exec_Military":"Corsair Excectutive Miltary Build",
+    "DRAK_Corsair_Exec_Military":"Corsair Executive Miltary",
     "DRAK_Cutlass_Black": "Cutlass Black",
     "DRAK_Cutlass_Blue": "Cutlass Blue",
     "DRAK_Cutlass_Red": "Cutlass Red",
     "DRAK_Cutlass_Steel": "Cutlass Steel",
-    "DRAK_Cutlass_Black_Exec_Military":"Cutlass Black Excectutive Military Build",
-    "DRAK_Cutlass_Black_Exec_Stealth":"Cutlass Black Excectutive Stealth Build",
+    "DRAK_Cutlass_Black_Exec_Military":"Cutlass Black Exec. Military",
+    "DRAK_Cutlass_Black_Exec_Stealth":"Cutlass Black Exec. Stealth",
     "DRAK_Cutlass_Black_ShipShowdown":"Cutlass Black BIS",
     "DRAK_Cutter": "Cutter",
     "DRAK_Cutter_Rambler": "Cutter Rambler",
@@ -362,7 +363,7 @@ vehicleMapping = {
     "VNCL_Glaive":"Glaive(Replica)",
     # GATAC
     "GAMA_Syulen": "Syulen",
-    "GAMA_Syulen_Exec_Stealth":"Syulen Excectutive Stealth Build",
+    "GAMA_Syulen_Exec_Stealth":"Syulen Executive Stealth",
     # KRUGER
     "KRIG_P52_Merlin": "P52 Merlin",
     "KRIG_P72_Archimedes": "P72 Archimedes",
