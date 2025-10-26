@@ -419,7 +419,8 @@ def update_rsi_handles(player_name, discord_id, db_rsi_handle):
         conn = get_connection()
         cursor = conn.cursor()
 
-        db_rsi_handle = json.loads(db_rsi_handle) # Convert db_rsi_handle to valid string from bytes since it was pulled from DB
+        if db_rsi_handle:
+            db_rsi_handle = json.loads(db_rsi_handle) # Convert db_rsi_handle to valid string from bytes since it was pulled from DB
 
         rsi_handles = []
         if db_rsi_handle:
@@ -1060,12 +1061,12 @@ def embed_stats(embed_var:discord.Embed, kill_buckets:dict, is_pu:bool):
 
     fav_fps_weapons_desc = "Top Inf. Weapons:\n"
     sorted_weapons_pu_fps = sorted(fav_weapons_fps.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
+    use_pad = True
     for weapon, count in sorted_weapons_pu_fps[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=True, fuzzy_search=False)
         fav_fps_weapons_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         fav_fps_weapons_desc += f"> \u3164\n"
     if is_pu:
         fav_fps_weapons_desc += "\u3164"
@@ -1073,12 +1074,12 @@ def embed_stats(embed_var:discord.Embed, kill_buckets:dict, is_pu:bool):
 
     fav_ship_weapons_desc = "Top Veh. Weapons:\n"
     sorted_weapons_pu_ships = sorted(fav_weapons_ship.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
+    use_pad = True
     for weapon, count in sorted_weapons_pu_ships[:3]: # Limit to 3
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=True, fuzzy_search=False)
         fav_ship_weapons_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         fav_ship_weapons_desc += f"> \u3164\n"
     if is_pu:
         fav_ship_weapons_desc += "\u3164"
@@ -1086,12 +1087,12 @@ def embed_stats(embed_var:discord.Embed, kill_buckets:dict, is_pu:bool):
 
     fav_curship_desc = "Top Ships/Vehicles:\n"
     sorted_ships_pu_ship = sorted(fav_ships_ship.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
+    use_pad = True
     for ship, count in sorted_ships_pu_ship[:3]: # Limit to 3
         ship_human_readable = convert_string(data_map.vehicleMapping, ship, base_variant=True, fuzzy_search=False)
         fav_curship_desc += f"> `{count}` {ship_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         fav_curship_desc += f"> \u3164\n"
     if is_pu:
         fav_curship_desc += "\u3164"
@@ -1199,32 +1200,32 @@ async def post_weekly_tally(channel_id:int):
     pu_total_desc += f"> `{pu_fps_unique_victims + pu_ship_unique_victims}` Unique Victims\n\u3164"
     pu_total_desc += "\n**Top Infantry Weapons:**\n"
     sorted_pu_fps_weapons = sorted(pu_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for weapon, count in sorted_pu_fps_weapons[:3]: # Limit to 3
+    use_pad = True
+    for weapon, count in sorted_pu_fps_weapons[:5]: # Limit to 5
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=False, fuzzy_search=False)
         pu_total_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         pu_total_desc += f"> \u3164\n"
     pu_total_desc += "\n**Top Vehicle Weapons:**\n"
     sorted_pu_ship_weapons = sorted(pu_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for weapon, count in sorted_pu_ship_weapons[:3]: # Limit to 3
+    use_pad = True
+    for weapon, count in sorted_pu_ship_weapons[:5]: # Limit to 5
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=False, fuzzy_search=False)
         pu_total_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         pu_total_desc += f"> \u3164\n"
     pu_total_desc += "\n**Top Vehicles:**\n"
     sorted_pu_ship_curships = sorted(pu_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for ship, count in sorted_pu_ship_curships[:3]: # Limit to 3
+    use_pad = True
+    for ship, count in sorted_pu_ship_curships[:5]: # Limit to 5
         ship_human_readable = convert_string(data_map.vehicleMapping, ship, base_variant=False, fuzzy_search=False)
         if ship_human_readable == "FPS":
             ship_human_readable = "Undetermined"
         pu_total_desc += f"> `{count}` {ship_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         pu_total_desc += f"> \u3164\n"
     #pu_total_desc += "\n\u3164"
     embed_var.add_field(name="🚀 Persistent Universe", value=pu_total_desc, inline=True)
@@ -1235,32 +1236,32 @@ async def post_weekly_tally(channel_id:int):
     ac_total_desc += f"> `{ac_fps_unique_victims + ac_ship_unique_victims}` Unique Victims\n\u3164"
     ac_total_desc += "\n**Top Infantry Weapons:**\n"
     sorted_ac_fps_weapons = sorted(ac_fps_weapon_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for weapon, count in sorted_ac_fps_weapons[:3]: # Limit to 3
+    use_pad = True
+    for weapon, count in sorted_ac_fps_weapons[:5]: # Limit to 5
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=False, fuzzy_search=False)
         ac_total_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         ac_total_desc += f"> \u3164\n"
     ac_total_desc += "\n**Top Vehicle Weapons:**\n"
     sorted_ac_ship_weapons = sorted(ac_ship_weapon_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for weapon, count in sorted_ac_ship_weapons[:3]: # Limit to 3
+    use_pad = True
+    for weapon, count in sorted_ac_ship_weapons[:5]: # Limit to 5
         weapon_human_readable = convert_string(data_map.weaponMapping, weapon, base_variant=False, fuzzy_search=False)
         ac_total_desc += f"> `{count}` {weapon_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         ac_total_desc += f"> \u3164\n"
     ac_total_desc += "\n**Top Vehicles:**\n"
     sorted_ac_ship_curships = sorted(ac_ship_curship_usage.items(), key=lambda x: x[1], reverse=True)
-    pad_count = 3
-    for ship, count in sorted_ac_ship_curships[:3]: # Limit to 3
+    use_pad = True
+    for ship, count in sorted_ac_ship_curships[:5]: # Limit to 5
         ship_human_readable = convert_string(data_map.vehicleMapping, ship,base_variant=False, fuzzy_search=False)
         if ship_human_readable == "FPS":
             ship_human_readable = "Undetermined"
         ac_total_desc += f"> `{count}` {ship_human_readable}\n"
-        pad_count -= 1
-    for _ in range(pad_count):
+        use_pad = False
+    if use_pad:
         ac_total_desc += f"> \u3164\n"
     #ac_total_desc += "\n\u3164"
     embed_var.add_field(name="🕹 Arena Commander", value=ac_total_desc, inline=True)

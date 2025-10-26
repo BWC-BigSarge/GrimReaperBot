@@ -47,6 +47,9 @@ weaponMapping = {
     "AMRS_LaserCannon_S5": "S5 Omnisky XV Cannon",
     "AMRS_LaserCannon_S6": "S6 Omnisky XVII Cannon",
     "APAR_MassDriver_S2": "Strife Mass Driver",
+    "BEHR_BallisticRepeater_S1": "SW16BR1 'Buzzsaw' Repeater",
+    "BEHR_BallisticRepeater_S2": "SW16BR2 'Sawbuck' Repeater",
+    "BEHR_BallisticRepeater_S3": "SW16BR3 'Shredder' Repeater",
     "BEHR_BallisticGatling_S4": "AD4B Ballistic Gatling",
     "BEHR_BallisticGatling_S5": "AD5B Ballistic Gatling",
     "BEHR_BallisticGatling_S6": "AD6B Ballistic Gatling",
@@ -65,8 +68,8 @@ weaponMapping = {
     "VNCL_PlasmaCannon_S3": "S3 WARLORD Cannon",
     "VNCL_PlasmaCannon_S5": "S5 WRATH Cannon",
     # Tank Weapons
-    "HRST_Nova_BallisticCannon_S5": "Kentucky windage",
-    "HRST_Storm_LaserRepeater_S3": "Pee Shooter",
+    "HRST_Nova_BallisticCannon_S5": "Nova Tank S5 Slayer Cannon",
+    "HRST_Storm_LaserRepeater_S3": "Storm Tank Reign-3 Repeater",
     # FPS weapons
     # Melee
     "none_melee_01": "Dropped the Soap",
