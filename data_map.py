@@ -63,7 +63,7 @@ weaponMapping = {
     "GATS_BallisticGatling_S3": "S3 Mantis GT-220 Gatling",
     "GATS_BallisticCannon_S3 ": "S3 Tarantula GT-870 MkIII Cannon",
     "BEHR_BallisticGatling_Hornet_Bespoke": "MiniGun Go Burrr",
-    "APAR_BallisticGatling_S4": "MinigGun Go Burrr",
+    "APAR_BallisticGatling_S4": "Revenant Gatling",
     "VNCL_LaserCannon_S2": "S2 WASP Repeater",
     "VNCL_PlasmaCannon_S3": "S3 WARLORD Cannon",
     "VNCL_PlasmaCannon_S5": "S5 WRATH Cannon",
