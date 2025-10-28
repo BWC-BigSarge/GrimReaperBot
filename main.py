@@ -131,9 +131,7 @@ def init_cnxpool():
 @tasks.loop(hours=1)
 async def hourly_task_check():
     logger.info("TASK LOOP - hourly_task_check() invoked")
-    await asyncio.to_thread(run_db_check)
-
-def run_db_check():
+    #await asyncio.to_thread(run_db_check)
     global cnxpool
     if not cnxpool:
         logger.warning("hourly_task_check: Database connection pool not initialized yet")
@@ -141,7 +139,7 @@ def run_db_check():
 
     logger.info("TASK LOOP - before should_task_run() invoked")
     if should_task_run("weekly_kill_tally", 7):
-        post_weekly_tally(CHANNEL_SC_ANNOUNCEMENTS)
+        await post_weekly_tally(CHANNEL_SC_ANNOUNCEMENTS)
     logger.info("TASK LOOP - after should_task_run() invoked")
 
 @bot.event
@@ -546,7 +544,7 @@ def convert_string(data_map, src_string:str, base_variant:bool, fuzzy_search:boo
         print(f"Error in convert_string: {e}")
     return src_string
 
-def should_task_run(task_name:str, interval_days:int = 7):
+def should_task_run(task_name:str, interval_days:int = 7) -> bool:
     """Return True if database scheduled task should run now."""
     try:
         now = datetime.utcnow()
@@ -568,15 +566,17 @@ def should_task_run(task_name:str, interval_days:int = 7):
             cursor.execute("UPDATE scheduled_tasks SET last_run = %s WHERE task_name = %s", (now, task_name))
             conn.commit()
             return True
+        else:
+            logger.info(f"TASK LOOP - Not time yet to run task: {task_name} (last run was {delta.days} days ago)")
+            return False
     except Exception as e:
         logger.error(f"Error in should_task_run for {task_name}: {e}")
+        return False
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-    logger.info("TASK LOOP - should_task_run() returning False")
-    return False
 
 def db_get_kill_buckets(sql_select_query:str="", sql_where_query:str="", sql_where_params:tuple=()) -> dict:
     """ Retrieve kills from the database and sort them into 4 buckets:
