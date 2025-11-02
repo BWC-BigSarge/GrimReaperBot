@@ -448,14 +448,15 @@ gameModeMapping = {
 }
 
 # Rules for ignoring certain victims (e.g., NPCs, non-player entities)
+# NOTE: using type "startsWith" doesn't work properly because it is checking against the entire log line
 ignoredVictimRules = [
-    { "type": "substring",  "value": "kopion" },
-    { "type": "substring",  "value": "marok" },
-    { "type": "substring",  "value": "PU_Human" },
-    { "type": "substring",  "value": "PC_Archetypes" },
-    { "type": "substring",  "value": "PU_Pilots" },
-    { "type": "startsWith", "value": "quasigrazer" },
-    { "type": "startsWith", "value": "shipjacker" },
-    { "type": "startsWith", "value": "argo_atls" },
-    { "type": "regex",      "value": r"^(?=.*vlk_)(?!.*_apex_)" }
+    { "type": "substring", "value": "kopion" },
+    { "type": "substring", "value": "marok" },
+    { "type": "substring", "value": "quasigrazer_" },
+    { "type": "substring", "value": "PU_Human" },
+    { "type": "substring", "value": "PC_Archetypes" },
+    { "type": "substring", "value": "PU_Pilots" },
+    { "type": "substring", "value": "shipjacker" },
+    { "type": "substring", "value": "argo_atls_" },
+    { "type": "regex",     "value": r"^(?=.*vlk_)(?!.*_apex_)" }
 ]
